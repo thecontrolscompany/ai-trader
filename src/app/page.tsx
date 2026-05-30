@@ -1,65 +1,162 @@
-import Image from "next/image";
+import { db } from "@/db";
+import { trades } from "@/db/schema";
+import { calcRealizedPnl } from "@/lib/pnl";
+import type { Trade } from "@/lib/types";
+import { Badge } from "@/components/ui/badge";
+import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
+import Link from "next/link";
 
-export default function Home() {
+export const dynamic = "force-dynamic";
+
+function buildSummary(rows: Trade[]) {
+  const open = rows.filter((t) => t.status === "open");
+  const closed = rows.filter((t) => t.status === "closed");
+  const wins = closed.filter((t) => {
+    const pnl = calcRealizedPnl(t);
+    return pnl != null && pnl > 0;
+  });
+  const realizedPnl = closed.reduce((sum, t) => sum + (calcRealizedPnl(t) ?? 0), 0);
+  return {
+    total: rows.length,
+    open: open.length,
+    closed: closed.length,
+    winRate: closed.length > 0 ? (wins.length / closed.length) * 100 : null,
+    realizedPnl,
+  };
+}
+
+export default async function DashboardPage() {
+  const rows = (await db.select().from(trades)) as Trade[];
+  const s = buildSummary(rows);
+  const openTrades = rows.filter((t) => t.status === "open").slice(0, 10);
+
   return (
-    <div className="flex flex-col flex-1 items-center justify-center bg-zinc-50 font-sans dark:bg-black">
-      <main className="flex flex-1 w-full max-w-3xl flex-col items-center justify-between py-32 px-16 bg-white dark:bg-black sm:items-start">
-        <Image
-          className="dark:invert"
-          src="/next.svg"
-          alt="Next.js logo"
-          width={100}
-          height={20}
-          priority
-        />
-        <div className="flex flex-col items-center gap-6 text-center sm:items-start sm:text-left">
-          <h1 className="max-w-xs text-3xl font-semibold leading-10 tracking-tight text-black dark:text-zinc-50">
-            To get started, edit the page.tsx file.
-          </h1>
-          <p className="max-w-md text-lg leading-8 text-zinc-600 dark:text-zinc-400">
-            Looking for a starting point or more instructions? Head over to{" "}
-            <a
-              href="https://vercel.com/templates?framework=next.js&utm_source=create-next-app&utm_medium=appdir-template-tw&utm_campaign=create-next-app"
-              className="font-medium text-zinc-950 dark:text-zinc-50"
+    <div className="space-y-8">
+      <div>
+        <h1 className="text-2xl font-semibold tracking-tight">Dashboard</h1>
+        <p className="text-muted-foreground text-sm mt-1">
+          Hypothetical portfolio — no real capital at risk
+        </p>
+      </div>
+
+      {/* Summary Cards */}
+      <div className="grid grid-cols-2 gap-4 sm:grid-cols-4">
+        <Card>
+          <CardHeader className="pb-1">
+            <CardTitle className="text-xs font-medium text-muted-foreground uppercase tracking-wide">
+              Total Trades
+            </CardTitle>
+          </CardHeader>
+          <CardContent>
+            <p className="text-3xl font-bold">{s.total}</p>
+          </CardContent>
+        </Card>
+        <Card>
+          <CardHeader className="pb-1">
+            <CardTitle className="text-xs font-medium text-muted-foreground uppercase tracking-wide">
+              Open
+            </CardTitle>
+          </CardHeader>
+          <CardContent>
+            <p className="text-3xl font-bold">{s.open}</p>
+          </CardContent>
+        </Card>
+        <Card>
+          <CardHeader className="pb-1">
+            <CardTitle className="text-xs font-medium text-muted-foreground uppercase tracking-wide">
+              Win Rate
+            </CardTitle>
+          </CardHeader>
+          <CardContent>
+            <p className="text-3xl font-bold">
+              {s.winRate != null ? `${s.winRate.toFixed(0)}%` : "—"}
+            </p>
+          </CardContent>
+        </Card>
+        <Card>
+          <CardHeader className="pb-1">
+            <CardTitle className="text-xs font-medium text-muted-foreground uppercase tracking-wide">
+              Realized P&L
+            </CardTitle>
+          </CardHeader>
+          <CardContent>
+            <p
+              className={`text-3xl font-bold ${
+                s.realizedPnl > 0
+                  ? "text-green-600"
+                  : s.realizedPnl < 0
+                  ? "text-red-600"
+                  : ""
+              }`}
             >
-              Templates
-            </a>{" "}
-            or the{" "}
-            <a
-              href="https://nextjs.org/learn?utm_source=create-next-app&utm_medium=appdir-template-tw&utm_campaign=create-next-app"
-              className="font-medium text-zinc-950 dark:text-zinc-50"
-            >
-              Learning
-            </a>{" "}
-            center.
-          </p>
+              {s.realizedPnl >= 0 ? "+" : ""}${s.realizedPnl.toFixed(2)}
+            </p>
+          </CardContent>
+        </Card>
+      </div>
+
+      {/* Open Positions */}
+      <div>
+        <div className="flex items-center justify-between mb-3">
+          <h2 className="text-lg font-semibold">Open Positions</h2>
+          <Link href="/trades" className="text-sm text-muted-foreground hover:text-foreground">
+            View all →
+          </Link>
         </div>
-        <div className="flex flex-col gap-4 text-base font-medium sm:flex-row">
-          <a
-            className="flex h-12 w-full items-center justify-center gap-2 rounded-full bg-foreground px-5 text-background transition-colors hover:bg-[#383838] dark:hover:bg-[#ccc] md:w-[158px]"
-            href="https://vercel.com/new?utm_source=create-next-app&utm_medium=appdir-template-tw&utm_campaign=create-next-app"
-            target="_blank"
-            rel="noopener noreferrer"
-          >
-            <Image
-              className="dark:invert"
-              src="/vercel.svg"
-              alt="Vercel logomark"
-              width={16}
-              height={16}
-            />
-            Deploy Now
-          </a>
-          <a
-            className="flex h-12 w-full items-center justify-center rounded-full border border-solid border-black/[.08] px-5 transition-colors hover:border-transparent hover:bg-black/[.04] dark:border-white/[.145] dark:hover:bg-[#1a1a1a] md:w-[158px]"
-            href="https://nextjs.org/docs?utm_source=create-next-app&utm_medium=appdir-template-tw&utm_campaign=create-next-app"
-            target="_blank"
-            rel="noopener noreferrer"
-          >
-            Documentation
-          </a>
-        </div>
-      </main>
+        {openTrades.length === 0 ? (
+          <div className="rounded-lg border border-dashed p-10 text-center text-muted-foreground text-sm">
+            No open trades.{" "}
+            <Link href="/trades/new" className="underline">
+              Enter your first trade
+            </Link>
+            .
+          </div>
+        ) : (
+          <div className="rounded-lg border overflow-hidden">
+            <table className="w-full text-sm">
+              <thead className="bg-muted/50 text-xs uppercase tracking-wide text-muted-foreground">
+                <tr>
+                  <th className="px-4 py-3 text-left">Ticker</th>
+                  <th className="px-4 py-3 text-left">Direction</th>
+                  <th className="px-4 py-3 text-right">Entry</th>
+                  <th className="px-4 py-3 text-right">Qty</th>
+                  <th className="px-4 py-3 text-right">Target</th>
+                  <th className="px-4 py-3 text-right">Stop</th>
+                  <th className="px-4 py-3 text-left">Opened</th>
+                </tr>
+              </thead>
+              <tbody className="divide-y">
+                {openTrades.map((t) => (
+                  <tr key={t.id} className="hover:bg-muted/30 transition-colors">
+                    <td className="px-4 py-3 font-semibold">
+                      <Link href={`/trades/${t.id}`}>{t.ticker}</Link>
+                    </td>
+                    <td className="px-4 py-3">
+                      <Badge
+                        variant={t.direction === "long" ? "default" : "destructive"}
+                        className="capitalize"
+                      >
+                        {t.direction}
+                      </Badge>
+                    </td>
+                    <td className="px-4 py-3 text-right">${t.entryPrice.toFixed(2)}</td>
+                    <td className="px-4 py-3 text-right">{t.quantity}</td>
+                    <td className="px-4 py-3 text-right text-green-600">
+                      {t.takeProfit != null ? `$${t.takeProfit.toFixed(2)}` : "—"}
+                    </td>
+                    <td className="px-4 py-3 text-right text-red-600">
+                      {t.stopLoss != null ? `$${t.stopLoss.toFixed(2)}` : "—"}
+                    </td>
+                    <td className="px-4 py-3 text-muted-foreground">
+                      {new Date(t.openedAt).toLocaleDateString()}
+                    </td>
+                  </tr>
+                ))}
+              </tbody>
+            </table>
+          </div>
+        )}
+      </div>
     </div>
   );
 }
