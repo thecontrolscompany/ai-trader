@@ -13,6 +13,7 @@ import { BROKERAGE_ID } from "@/lib/accounts";
 import { calcBuyFees } from "@/lib/fees";
 import { fetchTopStocks } from "@/lib/fetchStocks";
 import { callClaude, callOpenAI } from "@/lib/scanHelpers";
+import { calcShares } from "@/lib/shares";
 import { newId } from "@/lib/id";
 import { eq } from "drizzle-orm";
 import { NextRequest, NextResponse } from "next/server";
@@ -84,7 +85,7 @@ export async function POST(req: NextRequest) {
     const picks: DeployPick[] = qualifying.map((p) => {
       const entryPrice = Number(p.entryZoneLow);
       const invest = Math.floor(perSlot * 100) / 100; // round down to cents
-      const shares = invest / entryPrice;
+      const shares = calcShares(invest, entryPrice);
       return {
         symbol: String(p.symbol),
         name: String(p.name ?? p.symbol),
@@ -150,7 +151,7 @@ export async function POST(req: NextRequest) {
         const fees = calcBuyFees();
         // Use real current price as entry; fall back to AI suggested if unavailable
         const actualEntry = priceMap[pick.symbol] ?? pick.entryPrice;
-        const actualShares = pick.invest / actualEntry;
+        const actualShares = calcShares(pick.invest, actualEntry);
         await db.insert(trades).values({
           id: newId(),
           ticker: pick.symbol,

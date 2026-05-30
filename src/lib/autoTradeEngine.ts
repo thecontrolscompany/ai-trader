@@ -16,25 +16,14 @@
 import { db } from "@/db";
 import { accounts, autoTradeLog, autoTradeSettings, trades } from "@/db/schema";
 import { BROKERAGE_ID } from "@/lib/accounts";
+import { getEasternTime, isMarketHours, isWithinRunWindow } from "@/lib/autoTradeSchedule";
 import { calcSellFees } from "@/lib/fees";
 import { newId } from "@/lib/id";
 import { fetchTopStocks } from "@/lib/fetchStocks";
+import { calcShares } from "@/lib/shares";
 import { eq, and, gte, sql } from "drizzle-orm";
 
 const SETTINGS_ID = "00000000-0000-0000-0000-000000000010";
-
-type EasternTime = {
-  day: number;
-  hour: number;
-  minute: number;
-};
-
-const RUN_WINDOWS: Record<string, Array<[number, number]>> = {
-  "1x": [[9, 30]],
-  "2x": [[9, 30], [13, 30]],
-  "3x": [[9, 30], [11, 30], [13, 30]],
-  "4x": [[9, 30], [11, 30], [13, 30], [15, 0]],
-};
 
 export interface AutoTradeResult {
   opened: string[];
@@ -60,49 +49,6 @@ async function getDailyTradeCount(): Promise<number> {
     .from(autoTradeLog)
     .where(and(eq(autoTradeLog.action, "opened"), gte(autoTradeLog.createdAt, today)));
   return Number(rows[0]?.count ?? 0);
-}
-
-function getEasternTime(now = new Date()): EasternTime {
-  const parts = new Intl.DateTimeFormat("en-US", {
-    timeZone: "America/New_York",
-    weekday: "short",
-    hour: "2-digit",
-    minute: "2-digit",
-    hour12: false,
-  }).formatToParts(now);
-
-  const values = Object.fromEntries(
-    parts
-      .filter((part) => part.type !== "literal")
-      .map((part) => [part.type, part.value])
-  ) as Record<string, string>;
-
-  const dayMap: Record<string, number> = {
-    Sun: 0,
-    Mon: 1,
-    Tue: 2,
-    Wed: 3,
-    Thu: 4,
-    Fri: 5,
-    Sat: 6,
-  };
-
-  return {
-    day: dayMap[values.weekday] ?? 0,
-    hour: Number(values.hour),
-    minute: Number(values.minute),
-  };
-}
-
-function isWithinRunWindow(freq: string, et: EasternTime): boolean {
-  const windows = RUN_WINDOWS[freq] ?? RUN_WINDOWS["4x"];
-  return windows.some(([hour, minute]) => et.hour === hour && et.minute === minute);
-}
-
-function isMarketHours(et: EasternTime): boolean {
-  const time = et.hour * 60 + et.minute;
-  // Mon-Fri, 9:30 AM - 4:00 PM ET
-  return et.day >= 1 && et.day <= 5 && time >= 570 && time <= 960;
 }
 
 async function getAccountBalance(accountId: string): Promise<number> {
@@ -246,7 +192,7 @@ export async function runAutoTrade(force = false): Promise<AutoTradeResult> {
       if (livePrice) entryPrice = Number(livePrice);
     } catch { /* keep AI suggested price */ }
     const invest     = Math.min(perSlot, availableBalance);
-    const qty        = invest / entryPrice;
+    const qty        = calcShares(invest, entryPrice);
     if (invest < 1 || availableBalance < 1) {
       result.skipped.push(`${pick.symbol} (insufficient brokerage funds)`);
       continue;
