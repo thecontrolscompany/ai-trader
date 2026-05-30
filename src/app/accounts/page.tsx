@@ -1,211 +1,239 @@
 "use client";
 
-import { useEffect, useState } from "react";
-import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
+import { useEffect, useState, useCallback } from "react";
 
-interface Account {
-  id: string;
-  name: string;
-  type: "bank" | "brokerage";
-  balance: number;
-  createdAt: string;
+interface Account { id: string; name: string; type: "bank" | "brokerage"; balance: number; }
+interface Transfer { id: string; fromAccountId: string; toAccountId: string; amount: number; note: string | null; createdAt: string; }
+interface Trade {
+  id: string; ticker: string; direction: "long" | "short"; quantity: number;
+  entryPrice: number; status: string;
+}
+interface Position extends Trade {
+  currentPrice: number; totalValue: number; pnl: number; pnlPct: number;
 }
 
-interface Transfer {
-  id: string;
-  fromAccountId: string;
-  toAccountId: string;
-  amount: number;
-  note: string | null;
-  createdAt: string;
-}
-
-const BANK_ID = "00000000-0000-0000-0000-000000000001";
+const BANK_ID      = "00000000-0000-0000-0000-000000000001";
 const BROKERAGE_ID = "00000000-0000-0000-0000-000000000002";
 
-function fmt(n: number) {
-  return n.toLocaleString("en-US", { style: "currency", currency: "USD" });
+function fmt(n: number, showSign = false) {
+  const s = Math.abs(n).toLocaleString("en-US", { style: "currency", currency: "USD" });
+  if (showSign) return (n >= 0 ? "+" : "−") + s;
+  return (n < 0 ? "−" : "") + s;
+}
+function pct(n: number) {
+  return (n >= 0 ? "+" : "") + n.toFixed(2) + "%";
 }
 
 export default function AccountsPage() {
-  const [accounts, setAccounts] = useState<Account[]>([]);
+  const [accounts, setAccounts]   = useState<Account[]>([]);
   const [transfers, setTransfers] = useState<Transfer[]>([]);
-  const [loading, setLoading] = useState(true);
+  const [positions, setPositions] = useState<Position[]>([]);
+  const [loading, setLoading]     = useState(true);
+  const [posLoading, setPosLoading] = useState(false);
 
-  const [amount, setAmount] = useState("");
-  const [note, setNote] = useState("");
-  const [busy, setBusy] = useState(false);
-  const [error, setError] = useState<string | null>(null);
-  const [success, setSuccess] = useState<string | null>(null);
+  const [amount, setAmount]   = useState("");
+  const [note, setNote]       = useState("");
+  const [busy, setBusy]       = useState(false);
+  const [err, setErr]         = useState<string | null>(null);
+  const [ok, setOk]           = useState<string | null>(null);
+  const [showTransfer, setShowTransfer] = useState(false);
 
-  async function load() {
-    const res = await fetch("/api/accounts");
+  const load = useCallback(async () => {
+    const res  = await fetch("/api/accounts");
     const data = await res.json();
     setAccounts(data.accounts ?? []);
     setTransfers(data.transfers ?? []);
     setLoading(false);
-  }
+  }, []);
 
-  useEffect(() => { load(); }, []);
+  const loadPositions = useCallback(async () => {
+    setPosLoading(true);
+    try {
+      const res    = await fetch("/api/trades");
+      const trades: Trade[] = await res.json();
+      const open   = trades.filter((t) => t.status === "open");
+
+      const unique = [...new Set(open.map((t) => t.ticker))];
+      const priceMap: Record<string, number> = {};
+      await Promise.all(
+        unique.map((ticker) =>
+          fetch(`/api/market?ticker=${ticker}`)
+            .then((r) => r.json())
+            .then((d) => { if (d.price) priceMap[ticker] = d.price; })
+            .catch(() => {})
+        )
+      );
+
+      const pos: Position[] = open.map((t) => {
+        const curr = priceMap[t.ticker] ?? t.entryPrice;
+        const totalValue = curr * t.quantity;
+        const pnl = (curr - t.entryPrice) * t.quantity * (t.direction === "short" ? -1 : 1);
+        const pnlPct = ((curr - t.entryPrice) / t.entryPrice) * 100 * (t.direction === "short" ? -1 : 1);
+        return { ...t, currentPrice: curr, totalValue, pnl, pnlPct };
+      });
+      setPositions(pos);
+    } finally {
+      setPosLoading(false);
+    }
+  }, []);
+
+  useEffect(() => { load(); loadPositions(); }, [load, loadPositions]);
+
+  const bank      = accounts.find((a) => a.type === "bank");
+  const brokerage = accounts.find((a) => a.type === "brokerage");
+  const posValue  = positions.reduce((s, p) => s + p.totalValue, 0);
+  const totalPnl  = positions.reduce((s, p) => s + p.pnl, 0);
+  const totalValue = (bank?.balance ?? 0) + (brokerage?.balance ?? 0) + posValue;
 
   async function act(action: string, extra?: object) {
-    setBusy(true);
-    setError(null);
-    setSuccess(null);
-    const res = await fetch("/api/accounts", {
+    setBusy(true); setErr(null); setOk(null);
+    const res  = await fetch("/api/accounts", {
       method: "POST",
       headers: { "Content-Type": "application/json" },
       body: JSON.stringify({ action, amount: parseFloat(amount), note: note || undefined, ...extra }),
     });
     const data = await res.json();
-    if (!res.ok) {
-      setError(data.error);
-    } else {
-      setSuccess("Done!");
-      setAmount("");
-      setNote("");
-      await load();
-    }
+    if (!res.ok) { setErr(data.error); } else { setOk("Done!"); setAmount(""); setNote(""); await load(); }
     setBusy(false);
   }
 
-  const bank = accounts.find((a) => a.type === "bank");
-  const brokerage = accounts.find((a) => a.type === "brokerage");
-  const total = (bank?.balance ?? 0) + (brokerage?.balance ?? 0);
-
   return (
-    <div className="space-y-8 max-w-2xl">
-      <div>
-        <h1 className="text-2xl font-black tracking-tight">Accounts</h1>
-        <p className="text-muted-foreground text-sm mt-1">Manage your paper trading cash.</p>
+    <div className="space-y-6 max-w-2xl">
+
+      {/* ── Portfolio value ── */}
+      <div className="pt-2">
+        <p className="text-xs text-muted-foreground uppercase tracking-widest font-semibold mb-1">Total Portfolio</p>
+        <p className="text-4xl font-black">{loading ? "—" : fmt(totalValue)}</p>
+        {positions.length > 0 && (
+          <p className={`text-sm font-semibold mt-1 ${totalPnl >= 0 ? "text-green-400" : "text-red-400"}`}>
+            {fmt(totalPnl, true)} ({pct(totalPnl / (totalValue - totalPnl || 1) * 100)}) · open positions
+          </p>
+        )}
       </div>
 
-      {/* Balance cards */}
-      <div className="grid grid-cols-1 sm:grid-cols-3 gap-4">
-        <Card className="sm:col-span-1">
-          <CardHeader className="pb-1">
-            <CardTitle className="text-xs text-muted-foreground uppercase tracking-wide">🏦 Bank Account</CardTitle>
-          </CardHeader>
-          <CardContent>
-            <p className="text-2xl font-black">{loading ? "…" : fmt(bank?.balance ?? 0)}</p>
-          </CardContent>
-        </Card>
-        <Card className="sm:col-span-1">
-          <CardHeader className="pb-1">
-            <CardTitle className="text-xs text-muted-foreground uppercase tracking-wide">📈 Brokerage</CardTitle>
-          </CardHeader>
-          <CardContent>
-            <p className="text-2xl font-black">{loading ? "…" : fmt(brokerage?.balance ?? 0)}</p>
-          </CardContent>
-        </Card>
-        <Card className="sm:col-span-1 border-primary/30">
-          <CardHeader className="pb-1">
-            <CardTitle className="text-xs text-primary uppercase tracking-wide font-semibold">Total</CardTitle>
-          </CardHeader>
-          <CardContent>
-            <p className="text-2xl font-black text-primary">{loading ? "…" : fmt(total)}</p>
-          </CardContent>
-        </Card>
+      {/* ── Positions ── */}
+      {positions.length > 0 && (
+        <div>
+          <p className="text-xs text-muted-foreground uppercase tracking-widest font-semibold mb-3">
+            Positions {posLoading && <span className="animate-pulse">·</span>}
+          </p>
+          <div className="space-y-2">
+            {positions.map((p) => (
+              <div key={p.id} className="flex items-center justify-between py-3 border-b border-border">
+                <div>
+                  <div className="flex items-center gap-2">
+                    <span className="font-black text-base">{p.ticker}</span>
+                    <span className={`text-xs px-1.5 py-0.5 rounded font-semibold ${p.direction === "long" ? "bg-green-400/20 text-green-400" : "bg-red-400/20 text-red-400"}`}>
+                      {p.direction.toUpperCase()}
+                    </span>
+                  </div>
+                  <p className="text-xs text-muted-foreground mt-0.5">
+                    {p.quantity.toLocaleString(undefined, { maximumFractionDigits: 4 })} shares · avg {fmt(p.entryPrice)}
+                  </p>
+                </div>
+                <div className="text-right">
+                  <p className="font-bold">{fmt(p.totalValue)}</p>
+                  <p className={`text-xs font-semibold ${p.pnl >= 0 ? "text-green-400" : "text-red-400"}`}>
+                    {fmt(p.pnl, true)} ({pct(p.pnlPct)})
+                  </p>
+                  <p className="text-xs text-muted-foreground">${p.currentPrice.toFixed(2)}</p>
+                </div>
+              </div>
+            ))}
+          </div>
+        </div>
+      )}
+
+      {/* ── Cash ── */}
+      <div>
+        <p className="text-xs text-muted-foreground uppercase tracking-widest font-semibold mb-3">Cash</p>
+        <div className="grid grid-cols-2 gap-3">
+          <div className="rounded-2xl bg-card border border-border p-4">
+            <p className="text-xs text-muted-foreground mb-1">🏦 Bank</p>
+            <p className="text-xl font-black">{fmt(bank?.balance ?? 0)}</p>
+          </div>
+          <div className="rounded-2xl bg-card border border-border p-4">
+            <p className="text-xs text-muted-foreground mb-1">📈 Brokerage</p>
+            <p className="text-xl font-black">{fmt(brokerage?.balance ?? 0)}</p>
+            {posValue > 0 && <p className="text-xs text-muted-foreground mt-0.5">+{fmt(posValue)} in positions</p>}
+          </div>
+        </div>
       </div>
 
-      {/* Action form */}
-      <Card>
-        <CardHeader>
-          <CardTitle className="text-base">Move Money</CardTitle>
-        </CardHeader>
-        <CardContent className="space-y-4">
-          <div className="flex gap-3">
-            <div className="flex-1 space-y-1">
-              <label className="text-xs text-muted-foreground uppercase tracking-wide font-semibold">Amount ($)</label>
-              <input
-                type="number"
-                min="0.01"
-                step="0.01"
-                placeholder="0.00"
-                value={amount}
-                onChange={(e) => setAmount(e.target.value)}
-                className="w-full bg-background border border-border rounded-lg px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-ring"
-              />
-            </div>
-            <div className="flex-1 space-y-1">
-              <label className="text-xs text-muted-foreground uppercase tracking-wide font-semibold">Note (optional)</label>
-              <input
-                type="text"
-                placeholder="e.g. Initial deposit"
-                value={note}
-                onChange={(e) => setNote(e.target.value)}
-                className="w-full bg-background border border-border rounded-lg px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-ring"
-              />
-            </div>
-          </div>
-
-          <div className="grid grid-cols-1 sm:grid-cols-3 gap-2">
-            <button
-              onClick={() => act("deposit")}
-              disabled={busy || !amount}
-              className="rounded-xl bg-primary text-primary-foreground py-2.5 px-4 text-sm font-bold hover:opacity-90 transition-opacity disabled:opacity-50"
-            >
-              + Deposit to Bank
-            </button>
-            <button
-              onClick={() => act("transfer", { direction: "to_brokerage" })}
-              disabled={busy || !amount}
-              className="rounded-xl border border-border py-2.5 px-4 text-sm font-semibold hover:bg-accent transition-colors disabled:opacity-50"
-            >
-              Bank → Brokerage
-            </button>
-            <button
-              onClick={() => act("transfer", { direction: "to_bank" })}
-              disabled={busy || !amount}
-              className="rounded-xl border border-border py-2.5 px-4 text-sm font-semibold hover:bg-accent transition-colors disabled:opacity-50"
-            >
-              Brokerage → Bank
-            </button>
-          </div>
-
-          {error && <p className="text-sm text-red-400">{error}</p>}
-          {success && <p className="text-sm text-green-400">{success}</p>}
-        </CardContent>
-      </Card>
-
-      {/* Transfer history */}
+      {/* ── Move money ── */}
       <div>
-        <h2 className="text-base font-semibold mb-3">Transaction History</h2>
-        {transfers.length === 0 ? (
-          <p className="text-sm text-muted-foreground">No transactions yet.</p>
-        ) : (
-          <div className="rounded-xl border border-border overflow-hidden">
-            <table className="w-full text-sm">
-              <thead>
-                <tr className="border-b border-border bg-muted/40">
-                  <th className="px-4 py-2.5 text-left text-xs uppercase tracking-wide text-muted-foreground">Date</th>
-                  <th className="px-4 py-2.5 text-left text-xs uppercase tracking-wide text-muted-foreground">Description</th>
-                  <th className="px-4 py-2.5 text-right text-xs uppercase tracking-wide text-muted-foreground">Amount</th>
-                </tr>
-              </thead>
-              <tbody className="divide-y divide-border">
-                {transfers.map((t) => {
-                  const isTrade = t.note?.startsWith("Trade");
-                  const isDeposit = t.fromAccountId === t.toAccountId && t.fromAccountId === BANK_ID;
-                  const isToBank = t.toAccountId === BANK_ID && t.fromAccountId === BROKERAGE_ID;
-                  const amtColor = isDeposit || isToBank || t.note?.includes("closed") ? "text-green-400" : "text-muted-foreground";
-                  return (
-                    <tr key={t.id} className="hover:bg-accent/30 transition-colors">
-                      <td className="px-4 py-2.5 text-muted-foreground whitespace-nowrap">
-                        {new Date(t.createdAt).toLocaleDateString()} {new Date(t.createdAt).toLocaleTimeString([], { hour: "2-digit", minute: "2-digit" })}
-                      </td>
-                      <td className="px-4 py-2.5">{t.note ?? "—"}</td>
-                      <td className={`px-4 py-2.5 text-right font-medium ${amtColor}`}>
-                        {fmt(t.amount)}
-                      </td>
-                    </tr>
-                  );
-                })}
-              </tbody>
-            </table>
+        <button onClick={() => setShowTransfer((v) => !v)}
+          className="w-full rounded-2xl border border-border py-3 text-sm font-semibold text-muted-foreground hover:text-foreground hover:border-primary transition-colors">
+          {showTransfer ? "Hide" : "Move Money ↕"}
+        </button>
+
+        {showTransfer && (
+          <div className="mt-3 rounded-2xl border border-border bg-card p-4 space-y-4">
+            <div className="grid grid-cols-2 gap-3">
+              <div>
+                <label className="text-xs text-muted-foreground uppercase tracking-wide font-semibold block mb-1">Amount ($)</label>
+                <input type="number" min="0.01" step="0.01" placeholder="0.00" value={amount}
+                  onChange={(e) => setAmount(e.target.value)}
+                  className="w-full bg-background border border-border rounded-xl px-3 py-2.5 text-sm focus:outline-none focus:ring-2 focus:ring-ring" />
+              </div>
+              <div>
+                <label className="text-xs text-muted-foreground uppercase tracking-wide font-semibold block mb-1">Note</label>
+                <input type="text" placeholder="Optional" value={note} onChange={(e) => setNote(e.target.value)}
+                  className="w-full bg-background border border-border rounded-xl px-3 py-2.5 text-sm focus:outline-none focus:ring-2 focus:ring-ring" />
+              </div>
+            </div>
+            <div className="grid grid-cols-3 gap-2">
+              <button onClick={() => act("deposit")} disabled={busy || !amount}
+                className="rounded-xl bg-primary text-primary-foreground py-2.5 text-xs font-bold hover:opacity-90 disabled:opacity-40 transition-opacity">
+                + Deposit
+              </button>
+              <button onClick={() => act("transfer", { direction: "to_brokerage" })} disabled={busy || !amount}
+                className="rounded-xl border border-border py-2.5 text-xs font-semibold hover:bg-accent disabled:opacity-40 transition-colors">
+                Bank → Broker
+              </button>
+              <button onClick={() => act("transfer", { direction: "to_bank" })} disabled={busy || !amount}
+                className="rounded-xl border border-border py-2.5 text-xs font-semibold hover:bg-accent disabled:opacity-40 transition-colors">
+                Broker → Bank
+              </button>
+            </div>
+            {err && <p className="text-xs text-red-400">{err}</p>}
+            {ok  && <p className="text-xs text-green-400">{ok}</p>}
           </div>
         )}
       </div>
+
+      {/* ── Transaction history ── */}
+      <div>
+        <p className="text-xs text-muted-foreground uppercase tracking-widest font-semibold mb-3">
+          History
+        </p>
+        {transfers.length === 0 ? (
+          <p className="text-sm text-muted-foreground">No transactions yet.</p>
+        ) : (
+          <div className="space-y-0 divide-y divide-border rounded-2xl border border-border overflow-hidden">
+            {transfers.map((t) => {
+              const isDeposit  = t.fromAccountId === t.toAccountId && t.fromAccountId === BANK_ID;
+              const isReturn   = t.note?.includes("closed");
+              const amtColor   = (isDeposit || isReturn) ? "text-green-400" : "text-foreground";
+              const sign       = (isDeposit || isReturn) ? "+" : "−";
+              return (
+                <div key={t.id} className="flex items-start justify-between px-4 py-3 hover:bg-accent/30 transition-colors">
+                  <div className="flex-1 min-w-0 pr-4">
+                    <p className="text-sm font-medium truncate">{t.note ?? "Transfer"}</p>
+                    <p className="text-xs text-muted-foreground mt-0.5">
+                      {new Date(t.createdAt).toLocaleDateString()} {new Date(t.createdAt).toLocaleTimeString([], { hour: "2-digit", minute: "2-digit" })}
+                    </p>
+                  </div>
+                  <p className={`text-sm font-bold shrink-0 ${amtColor}`}>
+                    {sign}{Math.abs(t.amount).toLocaleString("en-US", { style: "currency", currency: "USD" })}
+                  </p>
+                </div>
+              );
+            })}
+          </div>
+        )}
+      </div>
+
     </div>
   );
 }
