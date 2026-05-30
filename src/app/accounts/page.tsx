@@ -1,6 +1,7 @@
 "use client";
 
 import { useEffect, useState, useCallback } from "react";
+import type { DeployPick } from "@/app/api/deploy/route";
 
 interface Account { id: string; name: string; type: "bank" | "brokerage"; balance: number; }
 interface Transfer { id: string; fromAccountId: string; toAccountId: string; amount: number; note: string | null; createdAt: string; }
@@ -38,6 +39,49 @@ export default function AccountsPage() {
   const [ok, setOk]           = useState<string | null>(null);
   const [showTransfer, setShowTransfer] = useState(false);
   const [resetting, setResetting] = useState(false);
+
+  // Deploy Capital flow
+  type DeployState = "idle" | "scanning" | "preview" | "executing" | "done";
+  const [deployState, setDeployState] = useState<DeployState>("idle");
+  const [deployModel, setDeployModel] = useState<"openai" | "claude">("openai");
+  const [deployPreview, setDeployPreview] = useState<{
+    balance: number; totalInvest: number; picks: DeployPick[]; summary: string;
+  } | null>(null);
+  const [deployResult, setDeployResult] = useState<{ opened: string[]; errors: string[] } | null>(null);
+  const [deployError, setDeployError] = useState<string | null>(null);
+
+  async function runDeployPreview() {
+    setDeployState("scanning");
+    setDeployError(null);
+    setDeployPreview(null);
+    setDeployResult(null);
+    try {
+      const res = await fetch("/api/deploy", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ action: "preview", model: deployModel }),
+      });
+      const data = await res.json();
+      if (!res.ok) { setDeployError(data.error); setDeployState("idle"); return; }
+      setDeployPreview(data);
+      setDeployState("preview");
+    } catch { setDeployError("Network error"); setDeployState("idle"); }
+  }
+
+  async function executeDeployment() {
+    if (!deployPreview) return;
+    setDeployState("executing");
+    const res = await fetch("/api/deploy", {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ action: "execute", picks: deployPreview.picks }),
+    });
+    const data = await res.json();
+    setDeployResult({ opened: data.opened ?? [], errors: data.errors ?? [] });
+    setDeployState("done");
+    await load();
+    await loadPositions();
+  }
 
   async function resetAll() {
     if (!confirm("Reset all paper trading data?\n\nThis clears all trades, history, and sets balances to $0.\nNo real money is affected.")) return;
@@ -169,6 +213,109 @@ export default function AccountsPage() {
           </div>
         </div>
       </div>
+
+      {/* ── Deploy Capital ── */}
+      {(brokerage?.balance ?? 0) >= 1 && positions.length === 0 && deployState === "idle" && (
+        <div className="rounded-2xl border-2 border-primary/40 bg-primary/5 p-5 space-y-3">
+          <div>
+            <p className="font-black text-lg">🚀 Deploy Capital</p>
+            <p className="text-sm text-muted-foreground mt-0.5">
+              AI will scan the market and invest your <span className="text-foreground font-semibold">{fmt(brokerage?.balance ?? 0)}</span> brokerage balance across the best picks it finds.
+            </p>
+          </div>
+          <div className="flex items-center gap-2">
+            <span className="text-xs text-muted-foreground">AI model:</span>
+            {(["openai", "claude"] as const).map((m) => (
+              <button key={m} onClick={() => setDeployModel(m)}
+                className={`text-xs px-3 py-1 rounded-lg border transition-colors ${deployModel === m ? "border-primary bg-primary/15 text-primary font-semibold" : "border-border text-muted-foreground hover:border-muted-foreground"}`}>
+                {m === "openai" ? "GPT-4o" : "Claude"}
+              </button>
+            ))}
+          </div>
+          <button onClick={runDeployPreview}
+            className="w-full rounded-xl bg-primary text-primary-foreground py-3 font-black text-base hover:opacity-90 transition-opacity">
+            Scan &amp; Preview →
+          </button>
+        </div>
+      )}
+
+      {deployState === "scanning" && (
+        <div className="rounded-2xl border border-border bg-card p-5 space-y-2 text-sm text-muted-foreground">
+          <p className="font-semibold text-foreground animate-pulse">🤖 AI is scanning the market…</p>
+          <p>Pulling stock data across 4 screeners…</p>
+          <p>Finding diamonds in the rough…</p>
+          <p className="text-xs">Usually takes 15–30 seconds.</p>
+        </div>
+      )}
+
+      {deployState === "preview" && deployPreview && (
+        <div className="rounded-2xl border-2 border-primary/40 bg-card p-5 space-y-4">
+          <div>
+            <p className="font-black text-lg">📋 Deployment Plan</p>
+            <p className="text-sm text-muted-foreground mt-0.5">{deployPreview.summary}</p>
+          </div>
+          <p className="text-sm">
+            Investing <span className="font-black text-primary">{fmt(deployPreview.totalInvest)}</span> across <span className="font-black">{deployPreview.picks.length} stocks</span> — <span className="text-muted-foreground">{fmt(deployPreview.balance - deployPreview.totalInvest)} stays in brokerage</span>
+          </p>
+          <div className="space-y-2">
+            {deployPreview.picks.map((p) => (
+              <div key={p.symbol} className="flex items-center justify-between py-2 border-b border-border text-sm">
+                <div>
+                  <span className="font-black text-primary">{p.symbol}</span>
+                  <span className="text-xs text-muted-foreground ml-2">{p.name}</span>
+                  <span className={`text-xs ml-2 px-1.5 py-0.5 rounded font-semibold ${
+                    p.riskLevel === "conservative" ? "bg-green-400/20 text-green-400" :
+                    p.riskLevel === "aggressive"   ? "bg-red-400/20 text-red-400" :
+                    "bg-yellow-400/20 text-yellow-400"}`}>
+                    {p.riskLevel}
+                  </span>
+                </div>
+                <div className="text-right">
+                  <p className="font-bold">{fmt(p.invest)}</p>
+                  <p className="text-xs text-muted-foreground">{p.shares.toFixed(4)} shares @ ${p.entryPrice.toFixed(2)}</p>
+                </div>
+              </div>
+            ))}
+          </div>
+          <div className="grid grid-cols-2 gap-2">
+            <button onClick={() => setDeployState("idle")}
+              className="rounded-xl border border-border py-2.5 text-sm font-semibold text-muted-foreground hover:text-foreground transition-colors">
+              Cancel
+            </button>
+            <button onClick={executeDeployment}
+              className="rounded-xl bg-primary text-primary-foreground py-2.5 text-sm font-black hover:opacity-90 transition-opacity">
+              Confirm &amp; Buy All
+            </button>
+          </div>
+        </div>
+      )}
+
+      {deployState === "executing" && (
+        <div className="rounded-2xl border border-border bg-card p-5">
+          <p className="text-sm font-semibold animate-pulse">⚡ Opening trades…</p>
+        </div>
+      )}
+
+      {deployState === "done" && deployResult && (
+        <div className="rounded-2xl border border-green-400/30 bg-green-400/5 p-5 space-y-2">
+          <p className="font-black text-green-400">✓ Capital Deployed!</p>
+          {deployResult.opened.length > 0 && (
+            <p className="text-sm">Opened: <span className="font-semibold">{deployResult.opened.join(", ")}</span></p>
+          )}
+          {deployResult.errors.length > 0 && deployResult.errors.map((e, i) => (
+            <p key={i} className="text-xs text-red-400">{e}</p>
+          ))}
+          <button onClick={() => { setDeployState("idle"); setDeployPreview(null); setDeployResult(null); }}
+            className="text-xs text-muted-foreground underline">Done</button>
+        </div>
+      )}
+
+      {deployError && (
+        <div className="rounded-2xl border border-destructive/40 bg-destructive/5 p-4">
+          <p className="text-sm text-destructive">{deployError}</p>
+          <button onClick={() => setDeployError(null)} className="text-xs underline mt-1">Dismiss</button>
+        </div>
+      )}
 
       {/* ── Move money ── */}
       <div>
