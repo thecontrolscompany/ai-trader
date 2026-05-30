@@ -76,9 +76,32 @@ export async function runAutoTrade(force = false): Promise<AutoTradeResult> {
   }
 
   if (!force && !(await isMarketHours())) {
-    result.summary = "Market is closed — no trades placed. Use 'Run Now' to force a scan outside market hours.";
+    result.summary = "Market is closed — no trades placed.";
     await log("skipped", undefined, undefined, "Market closed");
     return result;
+  }
+
+  // Frequency gate — skip mid-day cron runs if frequency is set lower
+  if (!force) {
+    const freq = settings.scanFrequency ?? "4x";
+    const now = new Date();
+    const etStr = now.toLocaleString("en-US", { timeZone: "America/New_York" });
+    const et = new Date(etStr);
+    const hour = et.getHours();
+    const min  = et.getMinutes();
+    // Market open (9:30) always runs; others respect frequency setting
+    const isOpen = hour === 9 && min >= 30 && min < 60;
+    if (!isOpen) {
+      if (freq === "1x") {
+        result.summary = "Frequency set to 1x/day — only runs at market open.";
+        return result;
+      }
+      if (freq === "2x" && hour >= 15) {
+        // 2x = open + midday only; skip afternoon runs
+        result.summary = "Frequency set to 2x/day — skipping afternoon run.";
+        return result;
+      }
+    }
   }
 
   const dailyCount = await getDailyTradeCount();

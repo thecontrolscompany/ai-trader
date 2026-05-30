@@ -29,10 +29,11 @@ export async function PATCH(req: NextRequest) {
   const body = await req.json();
   const updates: Record<string, unknown> = { updatedAt: new Date() };
 
-  if (body.enabled !== undefined)        updates.enabled        = String(body.enabled);
-  if (body.model !== undefined)          updates.model          = String(body.model);
-  if (body.autoClose !== undefined)      updates.autoClose      = String(body.autoClose);
-  if (body.minConfidence !== undefined)  updates.minConfidence  = Number(body.minConfidence);
+  if (body.enabled !== undefined)         updates.enabled         = String(body.enabled);
+  if (body.model !== undefined)           updates.model           = String(body.model);
+  if (body.autoClose !== undefined)       updates.autoClose       = String(body.autoClose);
+  if (body.scanFrequency !== undefined)   updates.scanFrequency   = String(body.scanFrequency);
+  if (body.minConfidence !== undefined)   updates.minConfidence   = Number(body.minConfidence);
   if (body.maxTradesPerDay !== undefined) updates.maxTradesPerDay = Number(body.maxTradesPerDay);
   if (body.maxPositionPct !== undefined)  updates.maxPositionPct  = Number(body.maxPositionPct);
 

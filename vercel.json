@@ -5,9 +5,9 @@
     "src/app/api/cron/auto-trade/route.ts": { "maxDuration": 60 }
   },
   "crons": [
-    {
-      "path": "/api/cron/auto-trade",
-      "schedule": "30 14 * * 1-5"
-    }
+    { "path": "/api/cron/auto-trade", "schedule": "30 13 * * 1-5" },
+    { "path": "/api/cron/auto-trade", "schedule": "30 15 * * 1-5" },
+    { "path": "/api/cron/auto-trade", "schedule": "30 17 * * 1-5" },
+    { "path": "/api/cron/auto-trade", "schedule": "0 19  * * 1-5" }
   ]
 }

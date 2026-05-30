@@ -6,6 +6,7 @@ CREATE TABLE "auto_trade_settings" (
   "max_trades_per_day" double precision NOT NULL DEFAULT 3,
   "max_position_pct" double precision NOT NULL DEFAULT 0.05,
   "auto_close" text NOT NULL DEFAULT 'true',
+  "scan_frequency" text NOT NULL DEFAULT '4x',
   "last_run_at" timestamp,
   "last_run_summary" text,
   "updated_at" timestamp DEFAULT now() NOT NULL

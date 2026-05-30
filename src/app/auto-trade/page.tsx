@@ -6,7 +6,8 @@ import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 interface Settings {
   enabled: string; model: string;
   minConfidence: number; maxTradesPerDay: number; maxPositionPct: number;
-  autoClose: string; lastRunAt: string | null; lastRunSummary: string | null;
+  autoClose: string; scanFrequency: string;
+  lastRunAt: string | null; lastRunSummary: string | null;
 }
 interface LogEntry {
   id: string; action: string; ticker: string | null;
@@ -191,6 +192,32 @@ export default function AutoTradePage() {
               className="w-full accent-primary" />
           </div>
 
+          {/* Scan frequency */}
+          <div>
+            <label className="text-xs text-muted-foreground uppercase tracking-wide font-semibold block mb-2">
+              Scan Frequency
+              <span className="ml-2 normal-case font-normal text-muted-foreground">(requires Vercel Pro)</span>
+            </label>
+            <div className="grid grid-cols-4 gap-2">
+              {([
+                { value: "1x", label: "1×/day",  desc: "9:30 AM" },
+                { value: "2x", label: "2×/day",  desc: "Open + Noon" },
+                { value: "3x", label: "3×/day",  desc: "+ 1:30 PM" },
+                { value: "4x", label: "4×/day",  desc: "+ 3:00 PM" },
+              ] as const).map((opt) => (
+                <button key={opt.value} onClick={() => save({ scanFrequency: opt.value })}
+                  className={`rounded-xl border-2 py-2 text-xs text-center transition-colors ${
+                    (settings.scanFrequency ?? "4x") === opt.value
+                      ? "border-primary bg-primary/10 text-foreground"
+                      : "border-border text-muted-foreground hover:border-muted-foreground"
+                  }`}>
+                  <p className="font-bold">{opt.label}</p>
+                  <p className="opacity-60 mt-0.5">{opt.desc}</p>
+                </button>
+              ))}
+            </div>
+          </div>
+
           {/* Auto-close */}
           <div className="flex items-center justify-between">
             <div>
@@ -225,7 +252,15 @@ export default function AutoTradePage() {
             </div>
           )}
 
-          <p className="text-sm text-muted-foreground">Auto-trade runs daily at <strong>9:30 AM ET</strong> (Monday–Friday). Run Now bypasses market hours.</p>
+          <p className="text-sm text-muted-foreground">
+            {{
+              "1x": "Scans once at 9:30 AM ET (market open).",
+              "2x": "Scans at 9:30 AM and 11:30 AM ET.",
+              "3x": "Scans at 9:30 AM, 11:30 AM, and 1:30 PM ET.",
+              "4x": "Scans at 9:30 AM, 11:30 AM, 1:30 PM, and 3:00 PM ET.",
+            }[settings.scanFrequency ?? "4x"] ?? ""}
+            {" "}Monday–Friday only. Run Now ignores schedule.
+          </p>
           {settings.lastRunAt && (
             <p className="text-xs text-muted-foreground">Last run: {new Date(settings.lastRunAt).toLocaleString()}</p>
           )}
