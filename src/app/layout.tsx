@@ -7,13 +7,14 @@ import "./globals.css";
 const geist = Geist({ subsets: ["latin"] });
 
 export const metadata: Metadata = {
-  title: "Tim & Shane Stock — AI Paper Trading",
+  title: "Tim & Shane Stocks — AI Paper Trading",
   description: "AI-powered paper trading platform",
 };
 
 const navLinks = [
   { href: "/", label: "Dashboard" },
-  { href: "/stocks", label: "Top 100 Stocks" },
+  { href: "/stocks", label: "Top 100" },
+  { href: "/scan", label: "AI Scan" },
   { href: "/trades", label: "My Trades" },
   { href: "/trades/new", label: "+ New Trade" },
 ];
@@ -21,60 +22,47 @@ const navLinks = [
 export default function RootLayout({ children }: { children: React.ReactNode }) {
   return (
     <html lang="en">
-      <body className={`${geist.className} bg-background text-foreground min-h-screen flex`}>
+      <body className={`${geist.className} bg-background text-foreground min-h-screen`}>
 
-        {/* Sidebar */}
-        <aside className="w-56 shrink-0 flex flex-col bg-sidebar border-r border-border min-h-screen sticky top-0">
+        {/* Header */}
+        <header className="sticky top-0 z-50 bg-background/95 backdrop-blur border-b border-border">
+          <div className="max-w-6xl mx-auto px-4 flex items-center gap-4 h-14">
 
-          {/* Logo */}
-          <div className="px-5 pt-6 pb-4 border-b border-border">
-            <p className="text-xs font-semibold uppercase tracking-widest text-muted-foreground mb-0.5">Paper Trading</p>
-            <h1 className="text-lg font-black leading-tight text-primary">
-              Tim &amp; Shane<br />
-              <span className="text-foreground">Stocks</span>
-            </h1>
-          </div>
-
-          {/* Nav */}
-          <nav className="flex flex-col gap-0.5 px-3 py-4 flex-1">
-            {navLinks.map((l) => (
-              <Link
-                key={l.href}
-                href={l.href}
-                className="px-3 py-2 rounded-lg text-sm font-medium text-muted-foreground hover:text-foreground hover:bg-accent transition-colors"
-              >
-                {l.label}
-              </Link>
-            ))}
-          </nav>
-
-          {/* Photos */}
-          <div className="flex items-end justify-between px-2 pb-0 mt-auto">
-            <div className="w-[96px] overflow-hidden rounded-t-2xl opacity-90">
-              <Image
-                src="/tim.png"
-                alt="Tim"
-                width={96}
-                height={128}
-                className="object-cover object-top w-full"
-              />
+            {/* Portraits */}
+            <div className="flex items-end gap-1 shrink-0">
+              <div className="w-9 h-12 rounded-t-xl overflow-hidden">
+                <Image src="/tim.png" alt="Tim" width={36} height={48} className="object-cover object-top w-full h-full" />
+              </div>
+              <div className="w-9 h-12 rounded-t-xl overflow-hidden">
+                <Image src="/shane.png" alt="Shane" width={36} height={48} className="object-cover object-top w-full h-full" />
+              </div>
             </div>
-            <div className="w-[96px] overflow-hidden rounded-t-2xl opacity-90">
-              <Image
-                src="/shane.png"
-                alt="Shane"
-                width={96}
-                height={128}
-                className="object-cover object-top w-full"
-              />
-            </div>
-          </div>
-        </aside>
 
-        {/* Main */}
-        <div className="flex-1 flex flex-col min-w-0">
-          <main className="flex-1 px-8 py-8">{children}</main>
-        </div>
+            {/* Brand */}
+            <Link href="/" className="shrink-0">
+              <span className="font-black text-primary text-base leading-none">Tim &amp; Shane</span>
+              <span className="font-black text-foreground text-base leading-none"> Stocks</span>
+            </Link>
+
+            {/* Nav — scrollable on mobile */}
+            <nav className="flex items-center gap-1 ml-auto overflow-x-auto scrollbar-hide">
+              {navLinks.map((l) => (
+                <Link
+                  key={l.href}
+                  href={l.href}
+                  className="px-3 py-1.5 rounded-lg text-sm font-medium text-muted-foreground hover:text-foreground hover:bg-accent transition-colors whitespace-nowrap"
+                >
+                  {l.label}
+                </Link>
+              ))}
+            </nav>
+          </div>
+        </header>
+
+        {/* Page content */}
+        <main className="max-w-6xl mx-auto px-4 py-6">
+          {children}
+        </main>
 
       </body>
     </html>
