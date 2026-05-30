@@ -1,6 +1,7 @@
 import { NextRequest, NextResponse } from "next/server";
 
-// Uses Yahoo Finance v8 chart endpoint — no API key required for delayed quotes
+// Uses Yahoo Finance v7 quote endpoint — same API used when opening trades,
+// ensuring currentPrice === entryPrice immediately after buying (zero phantom P&L).
 export async function GET(req: NextRequest) {
   const ticker = req.nextUrl.searchParams.get("ticker");
   if (!ticker) {
@@ -11,10 +12,10 @@ export async function GET(req: NextRequest) {
 
   try {
     const res = await fetch(
-      `https://query1.finance.yahoo.com/v8/finance/chart/${symbol}?interval=1d&range=1d`,
+      `https://query1.finance.yahoo.com/v7/finance/quote?symbols=${symbol}`,
       {
         headers: { "User-Agent": "Mozilla/5.0" },
-        next: { revalidate: 60 }, // cache 60s
+        next: { revalidate: 60 },
       }
     );
 
@@ -26,9 +27,9 @@ export async function GET(req: NextRequest) {
     }
 
     const data = await res.json();
-    const meta = data?.chart?.result?.[0]?.meta;
+    const quote = data?.quoteResponse?.result?.[0];
 
-    if (!meta) {
+    if (!quote) {
       return NextResponse.json(
         { error: `No data found for ${symbol}` },
         { status: 404 }
@@ -37,11 +38,13 @@ export async function GET(req: NextRequest) {
 
     return NextResponse.json({
       ticker: symbol,
-      price: meta.regularMarketPrice ?? meta.previousClose,
-      previousClose: meta.previousClose,
-      currency: meta.currency,
-      exchangeName: meta.exchangeName,
-      marketState: meta.marketState,
+      price: quote.regularMarketPrice,
+      previousClose: quote.regularMarketPreviousClose,
+      change: quote.regularMarketChange,
+      changePct: quote.regularMarketChangePercent,
+      currency: quote.currency,
+      exchangeName: quote.exchangeName,
+      marketState: quote.marketState,
     });
   } catch {
     return NextResponse.json({ error: "Failed to fetch market data" }, { status: 500 });

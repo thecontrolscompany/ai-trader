@@ -162,13 +162,13 @@ export default function AccountsPage() {
       <div className="pt-2">
         <p className="text-xs text-muted-foreground uppercase tracking-widest font-semibold mb-1">Total Invested</p>
         <p className="text-4xl font-black">{loading ? "—" : fmt(totalValue)}</p>
-        {positions.length > 0 && totalPnl !== 0 && (
+        {positions.length > 0 && Math.abs(totalPnl) >= 0.01 && (
           <p className={`text-sm font-semibold mt-1 ${totalPnl >= 0 ? "text-green-400" : "text-red-400"}`}>
-            Unrealized P&L: {fmt(totalPnl, true)} · Market value: {fmt((bank?.balance ?? 0) + (brokerage?.balance ?? 0) + marketValue)}
+            {fmt(totalPnl, true)} unrealized · market value {fmt((bank?.balance ?? 0) + (brokerage?.balance ?? 0) + marketValue)}
           </p>
         )}
-        {positions.length > 0 && totalPnl === 0 && (
-          <p className="text-xs text-muted-foreground mt-1">{positions.length} open position{positions.length !== 1 ? "s" : ""} · market closed</p>
+        {positions.length > 0 && Math.abs(totalPnl) < 0.01 && (
+          <p className="text-xs text-muted-foreground mt-1">{positions.length} open position{positions.length !== 1 ? "s" : ""}</p>
         )}
       </div>
 
