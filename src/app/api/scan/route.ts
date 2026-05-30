@@ -162,12 +162,9 @@ export async function POST(req: NextRequest) {
     return NextResponse.json({ error: "OPENAI_API_KEY not configured" }, { status: 500 });
   }
 
-  // Fetch live stock data — resolve base URL for both local and Vercel
-  const baseUrl = process.env.VERCEL_URL
-    ? `https://${process.env.VERCEL_URL}`
-    : process.env.NEXT_PUBLIC_BASE_URL ?? "http://localhost:3000";
-  const stockRes = await fetch(`${baseUrl}/api/stocks`);
-  const stocks: StockRow[] = await stockRes.json();
+  // Fetch live stock data directly (no internal HTTP call — avoids timeout issues)
+  const { fetchTopStocks } = await import("@/lib/fetchStocks");
+  const stocks: StockRow[] = await fetchTopStocks();
 
   // Call AI
   const raw = model === "claude"
