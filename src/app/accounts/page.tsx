@@ -143,15 +143,33 @@ export default function AccountsPage() {
   const totalValue = (bank?.balance ?? 0) + (brokerage?.balance ?? 0) + costBasis;
 
   async function act(action: string, extra?: object) {
+    const parsed = parseFloat(amount);
+    if (!amount || isNaN(parsed) || parsed <= 0) {
+      setErr("Enter a valid amount greater than zero.");
+      return;
+    }
     setBusy(true); setErr(null); setOk(null);
-    const res  = await fetch("/api/accounts", {
-      method: "POST",
-      headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({ action, amount: parseFloat(amount), note: note || undefined, ...extra }),
-    });
-    const data = await res.json();
-    if (!res.ok) { setErr(data.error); } else { setOk("Done!"); setAmount(""); setNote(""); await load(); }
-    setBusy(false);
+    try {
+      const res = await fetch("/api/accounts", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ action, amount: parsed, note: note || undefined, ...extra }),
+      });
+      let data: { error?: string; success?: boolean } = {};
+      try { data = await res.json(); } catch { data = {}; }
+      if (!res.ok) {
+        setErr(data.error ?? `Server error ${res.status}`);
+      } else {
+        setOk("✓ Done!");
+        setAmount("");
+        setNote("");
+        await load();
+      }
+    } catch (e) {
+      setErr(`Network error: ${e}`);
+    } finally {
+      setBusy(false);
+    }
   }
 
   return (

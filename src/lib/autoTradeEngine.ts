@@ -23,6 +23,19 @@ import { eq, and, gte, sql } from "drizzle-orm";
 
 const SETTINGS_ID = "00000000-0000-0000-0000-000000000010";
 
+type EasternTime = {
+  day: number;
+  hour: number;
+  minute: number;
+};
+
+const RUN_WINDOWS: Record<string, Array<[number, number]>> = {
+  "1x": [[9, 30]],
+  "2x": [[9, 30], [13, 30]],
+  "3x": [[9, 30], [11, 30], [13, 30]],
+  "4x": [[9, 30], [11, 30], [13, 30], [15, 0]],
+};
+
 export interface AutoTradeResult {
   opened: string[];
   closed: string[];
@@ -49,59 +62,83 @@ async function getDailyTradeCount(): Promise<number> {
   return Number(rows[0]?.count ?? 0);
 }
 
-async function isMarketHours(): Promise<boolean> {
-  const now = new Date();
-  // Convert to Eastern Time
-  const etStr = now.toLocaleString("en-US", { timeZone: "America/New_York" });
-  const et = new Date(etStr);
-  const day = et.getDay();  // 0=Sun, 6=Sat
-  const hour = et.getHours();
-  const min  = et.getMinutes();
-  const time = hour * 60 + min;
-  // Mon–Fri, 9:30 AM – 4:00 PM ET
-  return day >= 1 && day <= 5 && time >= 570 && time <= 960;
+function getEasternTime(now = new Date()): EasternTime {
+  const parts = new Intl.DateTimeFormat("en-US", {
+    timeZone: "America/New_York",
+    weekday: "short",
+    hour: "2-digit",
+    minute: "2-digit",
+    hour12: false,
+  }).formatToParts(now);
+
+  const values = Object.fromEntries(
+    parts
+      .filter((part) => part.type !== "literal")
+      .map((part) => [part.type, part.value])
+  ) as Record<string, string>;
+
+  const dayMap: Record<string, number> = {
+    Sun: 0,
+    Mon: 1,
+    Tue: 2,
+    Wed: 3,
+    Thu: 4,
+    Fri: 5,
+    Sat: 6,
+  };
+
+  return {
+    day: dayMap[values.weekday] ?? 0,
+    hour: Number(values.hour),
+    minute: Number(values.minute),
+  };
+}
+
+function isWithinRunWindow(freq: string, et: EasternTime): boolean {
+  const windows = RUN_WINDOWS[freq] ?? RUN_WINDOWS["4x"];
+  return windows.some(([hour, minute]) => et.hour === hour && et.minute === minute);
+}
+
+function isMarketHours(et: EasternTime): boolean {
+  const time = et.hour * 60 + et.minute;
+  // Mon-Fri, 9:30 AM - 4:00 PM ET
+  return et.day >= 1 && et.day <= 5 && time >= 570 && time <= 960;
+}
+
+async function getAccountBalance(accountId: string): Promise<number> {
+  const [row] = await db.select().from(accounts).where(eq(accounts.id, accountId)).limit(1);
+  return row?.balance ?? 0;
+}
+
+async function getOrCreateSettingsRow() {
+  let [settings] = await db.select().from(autoTradeSettings).where(eq(autoTradeSettings.id, SETTINGS_ID)).limit(1);
+  if (!settings) {
+    [settings] = await db.insert(autoTradeSettings).values({ id: SETTINGS_ID }).returning();
+  }
+  return settings;
 }
 
 export async function runAutoTrade(force = false): Promise<AutoTradeResult> {
   const result: AutoTradeResult = { opened: [], closed: [], skipped: [], errors: [], summary: "" };
 
   // Load settings — create defaults if row is missing
-  let [settings] = await db.select().from(autoTradeSettings).where(eq(autoTradeSettings.id, SETTINGS_ID)).limit(1);
-  if (!settings) {
-    [settings] = await db.insert(autoTradeSettings).values({ id: SETTINGS_ID }).returning();
-  }
+  const settings = await getOrCreateSettingsRow();
   if (!settings || settings.enabled !== "true") {
     result.summary = "Auto-trading is disabled.";
     return result;
   }
 
-  if (!force && !(await isMarketHours())) {
-    result.summary = "Market is closed — no trades placed.";
-    await log("skipped", undefined, undefined, "Market closed");
+  const et = getEasternTime();
+
+  if (!force && !isWithinRunWindow(settings.scanFrequency ?? "4x", et)) {
+    result.summary = "Outside the configured scan window.";
     return result;
   }
 
-  // Frequency gate — skip mid-day cron runs if frequency is set lower
-  if (!force) {
-    const freq = settings.scanFrequency ?? "4x";
-    const now = new Date();
-    const etStr = now.toLocaleString("en-US", { timeZone: "America/New_York" });
-    const et = new Date(etStr);
-    const hour = et.getHours();
-    const min  = et.getMinutes();
-    // Market open (9:30) always runs; others respect frequency setting
-    const isOpen = hour === 9 && min >= 30 && min < 60;
-    if (!isOpen) {
-      if (freq === "1x") {
-        result.summary = "Frequency set to 1x/day — only runs at market open.";
-        return result;
-      }
-      if (freq === "2x" && hour >= 15) {
-        // 2x = open + midday only; skip afternoon runs
-        result.summary = "Frequency set to 2x/day — skipping afternoon run.";
-        return result;
-      }
-    }
+  if (!force && !isMarketHours(et)) {
+    result.summary = "Market is closed — no trades placed.";
+    await log("skipped", undefined, undefined, "Market closed");
+    return result;
   }
 
   const dailyCount = await getDailyTradeCount();
@@ -171,9 +208,9 @@ export async function runAutoTrade(force = false): Promise<AutoTradeResult> {
   const openTickers = new Set(
     (await db.select().from(trades).where(eq(trades.status, "open"))).map((t) => t.ticker)
   );
-  const [brokerage] = await db.select().from(accounts).where(eq(accounts.id, BROKERAGE_ID)).limit(1);
+  const brokerBalance = await getAccountBalance(BROKERAGE_ID);
   let remaining = maxDaily - dailyCount;
-  let brokerBalance = brokerage.balance;
+  let availableBalance = brokerBalance;
 
   // Filter qualifying picks up-front so we can size positions intelligently
   // eslint-disable-next-line @typescript-eslint/no-explicit-any
@@ -194,8 +231,8 @@ export async function runAutoTrade(force = false): Promise<AutoTradeResult> {
 
     // Recalculate per-slot each iteration so undeployed cash rolls forward
     const perSlot = deployMode === "fixed"
-      ? brokerBalance * settings.maxPositionPct
-      : brokerBalance / remainingSlots;
+      ? availableBalance * settings.maxPositionPct
+      : availableBalance / remainingSlots;
 
     // Fetch actual current price so entry matches real market — avoids phantom P&L
     let entryPrice = Number(pick.entryZoneLow);
@@ -208,9 +245,9 @@ export async function runAutoTrade(force = false): Promise<AutoTradeResult> {
       const livePrice = qj?.quoteResponse?.result?.[0]?.regularMarketPrice;
       if (livePrice) entryPrice = Number(livePrice);
     } catch { /* keep AI suggested price */ }
-    const invest     = Math.min(perSlot, brokerBalance);
+    const invest     = Math.min(perSlot, availableBalance);
     const qty        = invest / entryPrice;
-    if (invest < 1 || brokerBalance < 1) {
+    if (invest < 1 || availableBalance < 1) {
       result.skipped.push(`${pick.symbol} (insufficient brokerage funds)`);
       continue;
     }
@@ -225,9 +262,9 @@ export async function runAutoTrade(force = false): Promise<AutoTradeResult> {
         fees: 0, notes: `[AUTO] ${pick.reasoning?.slice(0, 200) ?? ""}`,
         aiSignalId: null,
       });
-      brokerBalance -= invest;
+      availableBalance -= invest;
       remainingSlots = Math.max(1, remainingSlots - 1);
-      await db.update(accounts).set({ balance: brokerBalance }).where(eq(accounts.id, BROKERAGE_ID));
+      await db.update(accounts).set({ balance: availableBalance }).where(eq(accounts.id, BROKERAGE_ID));
       await log("opened", pick.symbol, tradeId,
         `Confidence ${(Number(pick.confidence) * 100).toFixed(0)}% · ${pick.riskLevel ?? "moderate"} risk · invested $${invest.toFixed(2)}`);
       openTickers.add(pick.symbol);
