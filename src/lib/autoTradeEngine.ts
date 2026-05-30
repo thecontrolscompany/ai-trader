@@ -65,8 +65,11 @@ async function isMarketHours(): Promise<boolean> {
 export async function runAutoTrade(): Promise<AutoTradeResult> {
   const result: AutoTradeResult = { opened: [], closed: [], skipped: [], errors: [], summary: "" };
 
-  // Load settings
-  const [settings] = await db.select().from(autoTradeSettings).where(eq(autoTradeSettings.id, SETTINGS_ID)).limit(1);
+  // Load settings — create defaults if row is missing
+  let [settings] = await db.select().from(autoTradeSettings).where(eq(autoTradeSettings.id, SETTINGS_ID)).limit(1);
+  if (!settings) {
+    [settings] = await db.insert(autoTradeSettings).values({ id: SETTINGS_ID }).returning();
+  }
   if (!settings || settings.enabled !== "true") {
     result.summary = "Auto-trading is disabled.";
     return result;
