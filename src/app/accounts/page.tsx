@@ -37,7 +37,6 @@ export default function AccountsPage() {
   const [busy, setBusy]       = useState(false);
   const [err, setErr]         = useState<string | null>(null);
   const [ok, setOk]           = useState<string | null>(null);
-  const [showTransfer, setShowTransfer] = useState(false);
   const [resetting, setResetting] = useState(false);
 
   // Deploy Capital flow
@@ -324,46 +323,32 @@ export default function AccountsPage() {
         </div>
       )}
 
-      {/* ── Move money ── */}
-      <div>
-        <button onClick={() => setShowTransfer((v) => !v)}
-          className="w-full rounded-2xl border border-border py-3 text-sm font-semibold text-muted-foreground hover:text-foreground hover:border-primary transition-colors">
-          {showTransfer ? "Hide" : "Move Money ↕"}
-        </button>
-
-        {showTransfer && (
-          <div className="mt-3 rounded-2xl border border-border bg-card p-4 space-y-4">
-            <div className="grid grid-cols-2 gap-3">
-              <div>
-                <label className="text-xs text-muted-foreground uppercase tracking-wide font-semibold block mb-1">Amount ($)</label>
-                <input type="number" min="0.01" step="0.01" placeholder="0.00" value={amount}
-                  onChange={(e) => setAmount(e.target.value)}
-                  className="w-full bg-background border border-border rounded-xl px-3 py-2.5 text-sm focus:outline-none focus:ring-2 focus:ring-ring" />
-              </div>
-              <div>
-                <label className="text-xs text-muted-foreground uppercase tracking-wide font-semibold block mb-1">Note</label>
-                <input type="text" placeholder="Optional" value={note} onChange={(e) => setNote(e.target.value)}
-                  className="w-full bg-background border border-border rounded-xl px-3 py-2.5 text-sm focus:outline-none focus:ring-2 focus:ring-ring" />
-              </div>
-            </div>
-            <div className="grid grid-cols-3 gap-2">
-              <button onClick={() => act("deposit")} disabled={busy || !amount}
-                className="rounded-xl bg-primary text-primary-foreground py-2.5 text-xs font-bold hover:opacity-90 disabled:opacity-40 transition-opacity">
-                + Deposit
-              </button>
-              <button onClick={() => act("transfer", { direction: "to_brokerage" })} disabled={busy || !amount}
-                className="rounded-xl border border-border py-2.5 text-xs font-semibold hover:bg-accent disabled:opacity-40 transition-colors">
-                Bank → Broker
-              </button>
-              <button onClick={() => act("transfer", { direction: "to_bank" })} disabled={busy || !amount}
-                className="rounded-xl border border-border py-2.5 text-xs font-semibold hover:bg-accent disabled:opacity-40 transition-colors">
-                Broker → Bank
-              </button>
-            </div>
-            {err && <p className="text-xs text-red-400">{err}</p>}
-            {ok  && <p className="text-xs text-green-400">{ok}</p>}
-          </div>
-        )}
+      {/* ── Move money ── always visible ── */}
+      <div className="rounded-2xl border border-border bg-card p-4 space-y-4">
+        <p className="text-xs text-muted-foreground uppercase tracking-widest font-semibold">Move Money</p>
+        <div className="flex gap-3">
+          <input type="number" min="0.01" step="0.01" placeholder="Amount ($)" value={amount}
+            onChange={(e) => setAmount(e.target.value)}
+            className="flex-1 bg-background border border-border rounded-xl px-3 py-2.5 text-sm focus:outline-none focus:ring-2 focus:ring-ring" />
+          <input type="text" placeholder="Note (optional)" value={note} onChange={(e) => setNote(e.target.value)}
+            className="flex-1 bg-background border border-border rounded-xl px-3 py-2.5 text-sm focus:outline-none focus:ring-2 focus:ring-ring" />
+        </div>
+        <div className="grid grid-cols-3 gap-2">
+          <button onClick={() => act("deposit")} disabled={busy || !amount}
+            className="rounded-xl bg-primary text-primary-foreground py-2.5 text-xs font-bold hover:opacity-90 disabled:opacity-40 transition-opacity">
+            + Deposit to Bank
+          </button>
+          <button onClick={() => act("transfer", { direction: "to_brokerage" })} disabled={busy || !amount}
+            className="rounded-xl border border-border py-2.5 text-xs font-semibold hover:bg-accent disabled:opacity-40 transition-colors">
+            Bank → Brokerage
+          </button>
+          <button onClick={() => act("transfer", { direction: "to_bank" })} disabled={busy || !amount}
+            className="rounded-xl border border-border py-2.5 text-xs font-semibold hover:bg-accent disabled:opacity-40 transition-colors">
+            Brokerage → Bank
+          </button>
+        </div>
+        {err && <p className="text-xs text-red-400">{err}</p>}
+        {ok  && <p className="text-xs text-green-400">{ok}</p>}
       </div>
 
       {/* ── Transaction history ── */}
