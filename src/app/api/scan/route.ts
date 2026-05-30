@@ -8,6 +8,8 @@ import type { StockRow } from "@/app/api/stocks/route";
 
 export type ScanModel = "claude" | "openai";
 
+export type RiskLevel = "conservative" | "moderate" | "aggressive";
+
 export interface ScanPick {
   symbol: string;
   name: string;
@@ -21,6 +23,10 @@ export interface ScanPick {
   reasoning: string;
   keyMetrics: string[];
   signalId: string;
+  riskLevel: RiskLevel;
+  riskRewardRatio: string;   // e.g. "1:2.5"
+  maxLossDollar: number;     // dollars at risk per share
+  maxGainDollar: number;     // potential gain per share
 }
 
 export interface ScanResult {
@@ -80,6 +86,10 @@ Return ONLY this exact JSON (no markdown, no explanation outside JSON):
       "targetPrice": 180.00,
       "stopLoss": 143.00,
       "timeHorizon": "2-3 months",
+      "riskLevel": "moderate",
+      "riskRewardRatio": "1:2.1",
+      "maxLossDollar": 7.00,
+      "maxGainDollar": 23.00,
       "reasoning": "In plain English: why this stock looks like a good deal right now. Explain each reason like the reader has never invested before.",
       "keyMetrics": [
         "P/E of 18 — this means you pay $18 for every $1 the company earns. That's a fair price.",
@@ -88,7 +98,15 @@ Return ONLY this exact JSON (no markdown, no explanation outside JSON):
       ]
     }
   ]
-}`;
+}
+
+riskLevel rules:
+- "conservative": stop loss within 3%, reward/risk >= 2:1, low beta (< 0.9), large-cap
+- "moderate": stop loss 3-7%, reward/risk >= 1.5:1, beta 0.9-1.4
+- "aggressive": stop loss > 7%, reward/risk < 1.5:1, or high beta (> 1.4), or small-cap
+riskRewardRatio: format as "1:X" where X = (targetPrice - entry) / (entry - stopLoss), rounded to 1 decimal
+maxLossDollar: entry midpoint minus stopLoss (per share)
+maxGainDollar: targetPrice minus entry midpoint (per share)`;
 }
 
 async function callClaude(stocks: StockRow[]): Promise<ScanResult> {
@@ -180,10 +198,27 @@ export async function POST(req: NextRequest) {
       // continue if one insert fails
     }
 
+    const entry = (Number(pick.entryZoneLow) + Number(pick.entryZoneHigh)) / 2;
+    const maxLoss = entry - Number(pick.stopLoss);
+    const maxGain = Number(pick.targetPrice) - entry;
+    const rrRaw = maxLoss > 0 ? maxGain / maxLoss : 0;
+    const riskRewardRatio = pick.riskRewardRatio ?? `1:${rrRaw.toFixed(1)}`;
+    const maxLossDollar = pick.maxLossDollar ?? maxLoss;
+    const maxGainDollar = pick.maxGainDollar ?? maxGain;
+    const riskLevel: RiskLevel = pick.riskLevel ?? (
+      maxLoss / entry < 0.03 && rrRaw >= 2 ? "conservative"
+      : maxLoss / entry > 0.07 ? "aggressive"
+      : "moderate"
+    );
+
     picks.push({
       ...pick,
       name: stockMap[pick.symbol]?.name ?? pick.symbol,
       signalId: id,
+      riskLevel,
+      riskRewardRatio,
+      maxLossDollar: Number(maxLossDollar.toFixed(2)),
+      maxGainDollar: Number(maxGainDollar.toFixed(2)),
     });
   }
 

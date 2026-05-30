@@ -1,6 +1,5 @@
 import type { Metadata } from "next";
 import { Geist } from "next/font/google";
-import { Suspense } from "react";
 import { auth } from "@/auth";
 import NavBar from "@/components/NavBar";
 import TickerBar from "@/components/TickerBar";
@@ -19,17 +18,12 @@ export default async function RootLayout({ children }: { children: React.ReactNo
   return (
     <html lang="en">
       <body className={`${geist.className} bg-background text-foreground min-h-screen`}>
-        {/* Ticker always visible — even before login */}
-        <Suspense fallback={<div className="h-8 bg-[#0a0d16] border-b border-border" />}>
-          <TickerBar />
-        </Suspense>
-
+        <TickerBar />
         <NavBar
           isLoggedIn={!!session?.user}
           userName={session?.user?.name}
           userImage={session?.user?.image}
         />
-
         <main className="max-w-6xl mx-auto px-4 py-6">
           {children}
         </main>

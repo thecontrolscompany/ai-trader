@@ -1,36 +1,49 @@
-import TickerScroll, { type TickerItem } from "./TickerScroll";
+"use client";
 
-const SYMBOLS = [
-  "SPY", "QQQ", "DIA", "IWM",
-  "AAPL", "MSFT", "NVDA", "AMZN", "GOOGL", "META", "TSLA", "BRK-B",
-  "JPM", "V", "UNH", "XOM", "LLY", "WMT", "MA",
-];
+import { useEffect, useState } from "react";
 
-async function fetchQuotes(symbols: string[]): Promise<TickerItem[]> {
-  try {
-    const joined = symbols.join(",");
-    const res = await fetch(
-      `https://query1.finance.yahoo.com/v7/finance/quote?symbols=${joined}&fields=regularMarketPrice,regularMarketChange,regularMarketChangePercent`,
-      {
-        headers: { "User-Agent": "Mozilla/5.0" },
-        next: { revalidate: 60 },
-      }
-    );
-    if (!res.ok) return [];
-    const json = await res.json();
-    const quotes: Record<string, unknown>[] = json?.quoteResponse?.result ?? [];
-    return quotes.map((q) => ({
-      symbol: String(q.symbol ?? ""),
-      price: Number(q.regularMarketPrice ?? 0),
-      change: Number(q.regularMarketChange ?? 0),
-      changePct: Number(q.regularMarketChangePercent ?? 0),
-    }));
-  } catch {
-    return [];
-  }
+interface TickerItem {
+  symbol: string;
+  price: number;
+  changePct: number;
 }
 
-export default async function TickerBar() {
-  const items = await fetchQuotes(SYMBOLS);
-  return <TickerScroll items={items} />;
+export default function TickerBar() {
+  const [items, setItems] = useState<TickerItem[]>([]);
+
+  useEffect(() => {
+    fetch("/api/stocks")
+      .then((r) => r.json())
+      .then((data: TickerItem[]) => {
+        if (Array.isArray(data)) setItems(data.slice(0, 30));
+      })
+      .catch(() => {});
+  }, []);
+
+  // Always render the bar — shows loading state until data arrives
+  const doubled = items.length ? [...items, ...items] : [];
+
+  return (
+    <div className="w-full bg-[#0a0d16] border-b border-border overflow-hidden h-8 flex items-center">
+      {items.length === 0 ? (
+        <p className="text-xs text-muted-foreground px-4 animate-pulse">Loading market data…</p>
+      ) : (
+        <div className="flex animate-ticker whitespace-nowrap">
+          {doubled.map((item, i) => {
+            const up = item.changePct >= 0;
+            return (
+              <span key={i} className="inline-flex items-center gap-1.5 px-5 text-xs font-medium">
+                <span className="font-bold text-white">{item.symbol}</span>
+                <span className="text-muted-foreground">${item.price.toFixed(2)}</span>
+                <span className={up ? "text-green-400" : "text-red-400"}>
+                  {up ? "▲" : "▼"} {Math.abs(item.changePct).toFixed(2)}%
+                </span>
+                <span className="text-border ml-3">│</span>
+              </span>
+            );
+          })}
+        </div>
+      )}
+    </div>
+  );
 }

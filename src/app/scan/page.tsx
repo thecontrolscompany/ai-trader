@@ -3,7 +3,13 @@
 import { useState } from "react";
 import { Badge } from "@/components/ui/badge";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
-import type { ScanModel, ScanResult } from "@/app/api/scan/route";
+import type { RiskLevel, ScanModel, ScanResult } from "@/app/api/scan/route";
+
+const RISK_CONFIG: Record<RiskLevel, { label: string; color: string; bg: string; desc: string }> = {
+  conservative: { label: "Conservative", color: "text-green-400", bg: "bg-green-400/10 border-green-400/30", desc: "Small stop loss, strong reward ratio, stable company" },
+  moderate:     { label: "Moderate",     color: "text-yellow-400", bg: "bg-yellow-400/10 border-yellow-400/30", desc: "Balanced risk and reward" },
+  aggressive:   { label: "Aggressive",   color: "text-red-400",   bg: "bg-red-400/10 border-red-400/30",   desc: "Higher potential gain, higher potential loss" },
+};
 
 const MODELS: { value: ScanModel; label: string; desc: string }[] = [
   { value: "claude", label: "Claude Sonnet", desc: "Anthropic · Great at nuanced reasoning" },
@@ -196,6 +202,33 @@ export default function ScanPage() {
                         <p className="text-xs text-muted-foreground mb-1.5 uppercase tracking-wide font-semibold">AI Confidence</p>
                         <ConfidenceBar value={pick.confidence} />
                       </div>
+
+                      {/* Risk / Reward */}
+                      {pick.riskLevel && (() => {
+                        const rc = RISK_CONFIG[pick.riskLevel] ?? RISK_CONFIG.moderate;
+                        return (
+                          <div className={`rounded-xl border px-4 py-3 flex flex-wrap items-center gap-4 text-sm ${rc.bg}`}>
+                            <div>
+                              <p className="text-xs text-muted-foreground mb-0.5 uppercase tracking-wide font-semibold">Risk Level</p>
+                              <p className={`font-black text-base ${rc.color}`}>{rc.label}</p>
+                              <p className="text-xs text-muted-foreground mt-0.5">{rc.desc}</p>
+                            </div>
+                            <div className="border-l border-border pl-4">
+                              <p className="text-xs text-muted-foreground mb-0.5 uppercase tracking-wide font-semibold">Risk / Reward</p>
+                              <p className="font-black text-base">{pick.riskRewardRatio}</p>
+                              <p className="text-xs text-muted-foreground mt-0.5">for every $1 risked</p>
+                            </div>
+                            <div className="border-l border-border pl-4">
+                              <p className="text-xs text-red-400 mb-0.5 uppercase tracking-wide font-semibold">Max Loss / share</p>
+                              <p className="font-bold text-red-400">${pick.maxLossDollar?.toFixed(2) ?? "—"}</p>
+                            </div>
+                            <div className="border-l border-border pl-4">
+                              <p className="text-xs text-green-400 mb-0.5 uppercase tracking-wide font-semibold">Max Gain / share</p>
+                              <p className="font-bold text-green-400">${pick.maxGainDollar?.toFixed(2) ?? "—"}</p>
+                            </div>
+                          </div>
+                        );
+                      })()}
 
                       {/* Price targets */}
                       <div className="grid grid-cols-3 gap-3 text-sm">
