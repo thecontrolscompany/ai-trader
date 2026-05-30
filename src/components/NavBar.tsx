@@ -2,6 +2,7 @@
 
 import Image from "next/image";
 import Link from "next/link";
+import { signOut } from "next-auth/react";
 import { usePathname } from "next/navigation";
 import { useState } from "react";
 
@@ -13,7 +14,12 @@ const navLinks = [
   { href: "/trades/new", label: "+ New Trade" },
 ];
 
-export default function NavBar() {
+interface Props {
+  userName?: string | null;
+  userImage?: string | null;
+}
+
+export default function NavBar({ userName, userImage }: Props) {
   const pathname = usePathname();
   const [open, setOpen] = useState(false);
 
@@ -21,6 +27,8 @@ export default function NavBar() {
     if (href === "/") return pathname === "/";
     return pathname.startsWith(href);
   }
+
+  const firstName = userName?.split(" ")[0] ?? null;
 
   return (
     <header className="sticky top-0 z-50 bg-background/95 backdrop-blur border-b border-border">
@@ -57,6 +65,20 @@ export default function NavBar() {
               {l.label}
             </Link>
           ))}
+
+          {/* User + sign out */}
+          <div className="flex items-center gap-2 ml-2 pl-2 border-l border-border">
+            {userImage && (
+              <img src={userImage} alt={userName ?? ""} className="w-7 h-7 rounded-full" referrerPolicy="no-referrer" />
+            )}
+            {firstName && <span className="text-sm text-muted-foreground">{firstName}</span>}
+            <button
+              onClick={() => signOut({ callbackUrl: "/login" })}
+              className="text-xs px-2 py-1 rounded-lg text-muted-foreground hover:text-foreground hover:bg-accent transition-colors"
+            >
+              Sign out
+            </button>
+          </div>
         </nav>
 
         {/* Mobile hamburger */}
@@ -88,6 +110,12 @@ export default function NavBar() {
               {l.label}
             </Link>
           ))}
+          <button
+            onClick={() => signOut({ callbackUrl: "/login" })}
+            className="px-4 py-3 rounded-xl text-sm font-semibold text-left text-muted-foreground hover:text-foreground hover:bg-accent transition-colors"
+          >
+            Sign out {firstName ? `(${firstName})` : ""}
+          </button>
         </div>
       )}
     </header>
