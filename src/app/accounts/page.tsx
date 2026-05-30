@@ -37,6 +37,16 @@ export default function AccountsPage() {
   const [err, setErr]         = useState<string | null>(null);
   const [ok, setOk]           = useState<string | null>(null);
   const [showTransfer, setShowTransfer] = useState(false);
+  const [resetting, setResetting] = useState(false);
+
+  async function resetAll() {
+    if (!confirm("Reset all paper trading data?\n\nThis clears all trades, history, and sets balances to $0.\nNo real money is affected.")) return;
+    setResetting(true);
+    await fetch("/api/accounts/reset", { method: "POST" });
+    setPositions([]);
+    await load();
+    setResetting(false);
+  }
 
   const load = useCallback(async () => {
     const res  = await fetch("/api/accounts");
@@ -232,6 +242,20 @@ export default function AccountsPage() {
             })}
           </div>
         )}
+      </div>
+
+      {/* ── Paper trading reset ── */}
+      <div className="pt-4 border-t border-border">
+        <button
+          onClick={resetAll}
+          disabled={resetting}
+          className="text-xs text-muted-foreground hover:text-red-400 transition-colors disabled:opacity-50"
+        >
+          {resetting ? "Resetting…" : "🗑 Reset paper trading data"}
+        </button>
+        <p className="text-xs text-muted-foreground mt-1 opacity-60">
+          Clears all trades, history, and balances. Paper trading only — no real money affected.
+        </p>
       </div>
 
     </div>
