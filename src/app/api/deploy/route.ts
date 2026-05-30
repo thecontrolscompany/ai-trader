@@ -124,6 +124,23 @@ export async function POST(req: NextRequest) {
     const opened: string[] = [];
     const errors: string[] = [];
 
+    // Fetch actual current prices for all tickers in parallel so entry price
+    // matches the real market price — avoids phantom P&L on open
+    const priceMap: Record<string, number> = {};
+    await Promise.all(
+      picks.map(async (p) => {
+        try {
+          const r = await fetch(
+            `https://query1.finance.yahoo.com/v7/finance/quote?symbols=${p.symbol}`,
+            { headers: { "User-Agent": "Mozilla/5.0" } }
+          );
+          const j = await r.json();
+          const price = j?.quoteResponse?.result?.[0]?.regularMarketPrice;
+          if (price) priceMap[p.symbol] = Number(price);
+        } catch { /* fall back to AI suggested price */ }
+      })
+    );
+
     for (const pick of picks) {
       if (balance < pick.invest) {
         errors.push(`${pick.symbol}: insufficient funds ($${balance.toFixed(2)} left)`);
@@ -131,14 +148,17 @@ export async function POST(req: NextRequest) {
       }
       try {
         const fees = calcBuyFees();
+        // Use real current price as entry; fall back to AI suggested if unavailable
+        const actualEntry = priceMap[pick.symbol] ?? pick.entryPrice;
+        const actualShares = pick.invest / actualEntry;
         await db.insert(trades).values({
           id: newId(),
           ticker: pick.symbol,
           assetClass: "stock",
           direction: pick.direction,
           status: "open",
-          entryPrice: pick.entryPrice,
-          quantity: pick.shares,
+          entryPrice: actualEntry,
+          quantity: actualShares,
           stopLoss: pick.stopLoss,
           takeProfit: pick.targetPrice,
           fees,

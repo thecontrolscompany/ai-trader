@@ -197,7 +197,17 @@ export async function runAutoTrade(force = false): Promise<AutoTradeResult> {
       ? brokerBalance * settings.maxPositionPct
       : brokerBalance / remainingSlots;
 
-    const entryPrice = Number(pick.entryZoneLow);
+    // Fetch actual current price so entry matches real market — avoids phantom P&L
+    let entryPrice = Number(pick.entryZoneLow);
+    try {
+      const qr = await fetch(
+        `https://query1.finance.yahoo.com/v7/finance/quote?symbols=${pick.symbol}`,
+        { headers: { "User-Agent": "Mozilla/5.0" } }
+      );
+      const qj = await qr.json();
+      const livePrice = qj?.quoteResponse?.result?.[0]?.regularMarketPrice;
+      if (livePrice) entryPrice = Number(livePrice);
+    } catch { /* keep AI suggested price */ }
     const invest     = Math.min(perSlot, brokerBalance);
     const qty        = invest / entryPrice;
     if (invest < 1 || brokerBalance < 1) {
