@@ -168,11 +168,19 @@ def run_backtest(cfg: dict):
     pause()
 
 
+def get_broker_client(cfg: dict):
+    """Return the configured broker client, or raise with a helpful message."""
+    from src.brokers import AlpacaPaperClient, TradierClient
+    broker = cfg.get("broker", "alpaca").lower()
+    if broker == "tradier":
+        return TradierClient()
+    return AlpacaPaperClient()
+
+
 def show_account(cfg: dict):
-    """Option D — show Alpaca paper account status."""
-    from src.brokers import AlpacaPaperClient
+    """Option D — show account status for configured broker."""
     try:
-        client = AlpacaPaperClient()
+        client = get_broker_client(cfg)
         acct = client.get_account()
         positions = client.get_positions()
 
@@ -207,10 +215,10 @@ def show_account(cfg: dict):
 
 def place_paper_trade(cfg: dict):
     """Option E — place a paper trade after explicit confirmation."""
-    from src.brokers import AlpacaPaperClient
     from src.risk import check_risk
 
-    print(Fore.RED + "\n⚠️  PAPER TRADE — This is simulated. No real money is used.")
+    broker_name = cfg.get("broker", "alpaca").upper()
+    print(Fore.RED + f"\n⚠️  PAPER/SIMULATED TRADE via {broker_name} — No real money is used.")
     symbol = input("Symbol (e.g. AAPL): ").strip().upper()
     if not symbol:
         return
@@ -230,7 +238,7 @@ def place_paper_trade(cfg: dict):
         return
 
     try:
-        client = AlpacaPaperClient()
+        client = get_broker_client(cfg)
         order = client.place_order(symbol, side, qty)
         print(Fore.GREEN + f"\n✓ Paper order submitted: {order.id}")
         print(f"  {order.symbol} | {order.side} {order.qty} | Status: {order.status}")

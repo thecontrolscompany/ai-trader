@@ -13,7 +13,11 @@ watchlist:
   - MSFT
   - NVDA
 
-broker: alpaca          # alpaca | ibkr | tradier
+# Broker selection:
+#   alpaca  — Alpaca paper trading (free, no account funding needed)
+#   tradier — Tradier brokerage (free real-time data, requires brokerage account)
+#             Set TRADIER_ACCESS_TOKEN + TRADIER_ACCOUNT_ID in .env when ready.
+broker: alpaca
 paper_trading: true     # MUST remain true — never set to false
 
 risk:
