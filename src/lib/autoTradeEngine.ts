@@ -62,7 +62,7 @@ async function isMarketHours(): Promise<boolean> {
   return day >= 1 && day <= 5 && time >= 570 && time <= 960;
 }
 
-export async function runAutoTrade(): Promise<AutoTradeResult> {
+export async function runAutoTrade(force = false): Promise<AutoTradeResult> {
   const result: AutoTradeResult = { opened: [], closed: [], skipped: [], errors: [], summary: "" };
 
   // Load settings — create defaults if row is missing
@@ -75,8 +75,8 @@ export async function runAutoTrade(): Promise<AutoTradeResult> {
     return result;
   }
 
-  if (!(await isMarketHours())) {
-    result.summary = "Market is closed — no trades placed.";
+  if (!force && !(await isMarketHours())) {
+    result.summary = "Market is closed — no trades placed. Use 'Run Now' to force a scan outside market hours.";
     await log("skipped", undefined, undefined, "Market closed");
     return result;
   }
