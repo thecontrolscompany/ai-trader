@@ -24,7 +24,11 @@ export default function AutoTradePage() {
   const [log, setLog] = useState<LogEntry[]>([]);
   const [saving, setSaving] = useState(false);
   const [running, setRunning] = useState(false);
-  const [runResult, setRunResult] = useState<string | null>(null);
+  const [runResult, setRunResult] = useState<{
+    summary: string; opened: string[]; closed: string[];
+    skipped: string[]; errors: string[];
+  } | null>(null);
+  const [brokerageBalance, setBrokerageBalance] = useState<number | null>(null);
 
   async function load() {
     try {
@@ -38,7 +42,13 @@ export default function AutoTradePage() {
       setLoadError(`Network error: ${e}`);
     }
   }
-  useEffect(() => { load(); }, []);
+  useEffect(() => {
+    load();
+    fetch("/api/accounts").then(r => r.json()).then(d => {
+      const b = d.accounts?.find((a: {type: string}) => a.type === "brokerage");
+      if (b) setBrokerageBalance(b.balance);
+    }).catch(() => {});
+  }, []);
 
   async function save(patch: Partial<Settings>) {
     setSaving(true);
@@ -57,8 +67,19 @@ export default function AutoTradePage() {
     setRunResult(null);
     const res = await fetch("/api/auto-trade/run", { method: "POST" });
     const data = await res.json();
-    setRunResult(data.summary ?? data.error ?? "Done");
+    setRunResult({
+      summary: data.summary ?? data.error ?? "Done",
+      opened:  data.opened  ?? [],
+      closed:  data.closed  ?? [],
+      skipped: data.skipped ?? [],
+      errors:  data.errors  ?? [],
+    });
     await load();
+    // refresh balance
+    fetch("/api/accounts").then(r => r.json()).then(d => {
+      const b = d.accounts?.find((a: {type: string}) => a.type === "brokerage");
+      if (b) setBrokerageBalance(b.balance);
+    }).catch(() => {});
     setRunning(false);
   }
 
@@ -187,20 +208,61 @@ export default function AutoTradePage() {
       {/* Schedule info */}
       <Card>
         <CardContent className="p-5 space-y-3">
-          <p className="text-sm font-semibold">⏰ Schedule</p>
-          <p className="text-sm text-muted-foreground">Auto-trade runs daily at <strong>9:30 AM ET</strong> (Monday–Friday) when the market opens.</p>
+          <div className="flex items-center justify-between">
+            <p className="text-sm font-semibold">⏰ Schedule</p>
+            {brokerageBalance !== null && (
+              <p className="text-xs text-muted-foreground">
+                Brokerage: <span className={brokerageBalance < 10 ? "text-red-400 font-bold" : "text-foreground font-semibold"}>
+                  ${brokerageBalance.toLocaleString("en-US", { minimumFractionDigits: 2, maximumFractionDigits: 2 })}
+                </span>
+              </p>
+            )}
+          </div>
+
+          {brokerageBalance !== null && brokerageBalance < 10 && (
+            <div className="rounded-xl bg-yellow-400/10 border border-yellow-400/30 px-3 py-2 text-xs text-yellow-400">
+              ⚠️ Brokerage balance is too low to open trades. Go to <strong>Portfolio → Move Money</strong> to deposit funds and transfer to Brokerage.
+            </div>
+          )}
+
+          <p className="text-sm text-muted-foreground">Auto-trade runs daily at <strong>9:30 AM ET</strong> (Monday–Friday). Run Now bypasses market hours.</p>
           {settings.lastRunAt && (
             <p className="text-xs text-muted-foreground">Last run: {new Date(settings.lastRunAt).toLocaleString()}</p>
           )}
-          {settings.lastRunSummary && (
-            <p className="text-sm rounded-xl bg-muted/40 px-3 py-2">{settings.lastRunSummary}</p>
-          )}
+
           <button onClick={runNow} disabled={running}
             className="w-full rounded-xl border border-primary/50 text-primary py-2.5 text-sm font-bold hover:bg-primary/10 transition-colors disabled:opacity-50">
-            {running ? "⟳ Running scan…" : "▶ Run Now (manual trigger)"}
+            {running ? "⟳ Running scan…" : "▶ Run Now"}
           </button>
+
           {runResult && (
-            <div className="rounded-xl bg-card border border-border p-3 text-sm">{runResult}</div>
+            <div className="rounded-xl bg-card border border-border p-4 space-y-3 text-sm">
+              <p className="font-semibold">{runResult.summary}</p>
+              {runResult.opened.length > 0 && (
+                <div>
+                  <p className="text-xs text-green-400 uppercase tracking-wide font-bold mb-1">✓ Opened</p>
+                  {runResult.opened.map((s, i) => <p key={i} className="text-xs text-green-400">{s}</p>)}
+                </div>
+              )}
+              {runResult.closed.length > 0 && (
+                <div>
+                  <p className="text-xs text-blue-400 uppercase tracking-wide font-bold mb-1">↩ Closed</p>
+                  {runResult.closed.map((s, i) => <p key={i} className="text-xs text-blue-400">{s}</p>)}
+                </div>
+              )}
+              {runResult.skipped.length > 0 && (
+                <div>
+                  <p className="text-xs text-muted-foreground uppercase tracking-wide font-bold mb-1">— Skipped</p>
+                  {runResult.skipped.map((s, i) => <p key={i} className="text-xs text-muted-foreground">{s}</p>)}
+                </div>
+              )}
+              {runResult.errors.length > 0 && (
+                <div>
+                  <p className="text-xs text-red-400 uppercase tracking-wide font-bold mb-1">✗ Errors</p>
+                  {runResult.errors.map((s, i) => <p key={i} className="text-xs text-red-400">{s}</p>)}
+                </div>
+              )}
+            </div>
           )}
         </CardContent>
       </Card>
