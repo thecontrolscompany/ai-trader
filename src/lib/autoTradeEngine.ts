@@ -175,7 +175,23 @@ export async function runAutoTrade(force = false): Promise<AutoTradeResult> {
   let remaining = maxDaily - dailyCount;
   let brokerBalance = brokerage.balance;
 
-  for (const rawPick of picks?.picks ?? []) {
+  // Filter qualifying picks up-front so we can size positions intelligently
+  // eslint-disable-next-line @typescript-eslint/no-explicit-any
+  const qualifyingPicks: any[] = (picks?.picks ?? []).filter((rawPick: any) => {
+    const pick = rawPick as any;
+    if (Number(pick.confidence ?? 0) < settings.minConfidence) return false;
+    if (openTickers.has(String(pick.symbol))) return false;
+    return true;
+  }).slice(0, remaining);
+
+  // Capital allocation: spread mode divides available cash evenly across picks
+  const deployMode = (settings as any).deployMode ?? "spread";
+  const slotCount  = Math.max(1, qualifyingPicks.length);
+  const perSlot    = deployMode === "fixed"
+    ? brokerBalance * settings.maxPositionPct          // fixed % per trade
+    : brokerBalance / slotCount;                        // spread evenly
+
+  for (const rawPick of qualifyingPicks) {
     // eslint-disable-next-line @typescript-eslint/no-explicit-any
     const pick = rawPick as any;
     if (remaining <= 0) break;
@@ -188,9 +204,9 @@ export async function runAutoTrade(force = false): Promise<AutoTradeResult> {
       continue;
     }
     const entryPrice = Number(pick.entryZoneLow);
-    const invest     = brokerBalance * settings.maxPositionPct;
+    const invest     = Math.min(perSlot, brokerBalance); // never exceed available balance
     const qty        = invest / entryPrice;
-    if (invest < 1 || brokerBalance < invest) {
+    if (invest < 1 || brokerBalance < 1) {
       result.skipped.push(`${pick.symbol} (insufficient brokerage funds)`);
       continue;
     }

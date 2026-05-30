@@ -6,7 +6,7 @@ import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 interface Settings {
   enabled: string; model: string;
   minConfidence: number; maxTradesPerDay: number; maxPositionPct: number;
-  autoClose: string; scanFrequency: string;
+  autoClose: string; scanFrequency: string; deployMode: string;
   lastRunAt: string | null; lastRunSummary: string | null;
 }
 interface LogEntry {
@@ -180,16 +180,40 @@ export default function AutoTradePage() {
               className="w-full accent-primary" />
           </div>
 
-          {/* Max position size */}
+          {/* Capital deployment mode */}
           <div>
-            <div className="flex justify-between mb-1">
-              <label className="text-xs text-muted-foreground uppercase tracking-wide font-semibold">Max Position Size</label>
-              <span className="text-sm font-bold text-primary">{Math.round(settings.maxPositionPct * 100)}% of brokerage</span>
+            <label className="text-xs text-muted-foreground uppercase tracking-wide font-semibold block mb-2">Capital Deployment</label>
+            <div className="grid grid-cols-2 gap-2 mb-3">
+              {([
+                { value: "spread", label: "Spread evenly", desc: "Divide available cash across all picks — deploys most of the balance" },
+                { value: "fixed",  label: "Fixed % each",  desc: `${Math.round(settings.maxPositionPct * 100)}% per trade — leaves more idle cash` },
+              ] as const).map((opt) => (
+                <button key={opt.value} onClick={() => save({ deployMode: opt.value })}
+                  className={`rounded-xl border-2 p-3 text-left text-xs transition-colors ${
+                    (settings.deployMode ?? "spread") === opt.value
+                      ? "border-primary bg-primary/10"
+                      : "border-border text-muted-foreground hover:border-muted-foreground"
+                  }`}>
+                  <p className="font-bold mb-0.5">{opt.label}</p>
+                  <p className="opacity-60 leading-tight">{opt.desc}</p>
+                </button>
+              ))}
             </div>
-            <input type="range" min="1" max="25" step="1"
-              value={Math.round(settings.maxPositionPct * 100)}
-              onChange={(e) => save({ maxPositionPct: Number(e.target.value) / 100 })}
-              className="w-full accent-primary" />
+            {(settings.deployMode ?? "spread") === "fixed" && (
+              <>
+                <div className="flex justify-between mb-1">
+                  <label className="text-xs text-muted-foreground font-semibold">Fixed % per trade</label>
+                  <span className="text-sm font-bold text-primary">{Math.round(settings.maxPositionPct * 100)}%</span>
+                </div>
+                <input type="range" min="1" max="50" step="1"
+                  value={Math.round(settings.maxPositionPct * 100)}
+                  onChange={(e) => save({ maxPositionPct: Number(e.target.value) / 100 })}
+                  className="w-full accent-primary" />
+                <div className="flex justify-between text-xs text-muted-foreground mt-1">
+                  <span>1% (very small)</span><span>50% (half the balance)</span>
+                </div>
+              </>
+            )}
           </div>
 
           {/* Scan frequency */}

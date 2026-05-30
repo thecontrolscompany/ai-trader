@@ -77,6 +77,7 @@ export const autoTradeSettings = pgTable("auto_trade_settings", {
   maxPositionPct: doublePrecision("max_position_pct").notNull().default(0.05),
   autoClose: text("auto_close").notNull().default("true"),
   scanFrequency: text("scan_frequency").notNull().default("4x"),
+  deployMode: text("deploy_mode").notNull().default("spread"),
   lastRunAt: timestamp("last_run_at"),
   lastRunSummary: text("last_run_summary"),
   updatedAt: timestamp("updated_at").notNull().defaultNow(),

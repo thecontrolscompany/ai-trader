@@ -33,6 +33,7 @@ export async function PATCH(req: NextRequest) {
   if (body.model !== undefined)           updates.model           = String(body.model);
   if (body.autoClose !== undefined)       updates.autoClose       = String(body.autoClose);
   if (body.scanFrequency !== undefined)   updates.scanFrequency   = String(body.scanFrequency);
+  if (body.deployMode !== undefined)      updates.deployMode      = String(body.deployMode);
   if (body.minConfidence !== undefined)   updates.minConfidence   = Number(body.minConfidence);
   if (body.maxTradesPerDay !== undefined) updates.maxTradesPerDay = Number(body.maxTradesPerDay);
   if (body.maxPositionPct !== undefined)  updates.maxPositionPct  = Number(body.maxPositionPct);
