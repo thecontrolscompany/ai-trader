@@ -4,6 +4,7 @@ import { calcRealizedPnl } from "@/lib/pnl";
 import type { Trade } from "@/lib/types";
 import { Badge } from "@/components/ui/badge";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
+import Image from "next/image";
 import Link from "next/link";
 
 export const dynamic = "force-dynamic";
@@ -156,6 +157,24 @@ export default async function DashboardPage() {
             </table>
           </div>
         )}
+      </div>
+      {/* Traders */}
+      <div>
+        <h2 className="text-lg font-semibold mb-4">The Traders</h2>
+        <div className="grid grid-cols-2 gap-6 max-w-md">
+          <div className="flex flex-col items-center gap-2">
+            <div className="rounded-2xl overflow-hidden w-36 h-44 bg-muted">
+              <Image src="/tim.png" alt="Tim" width={144} height={176} className="object-cover w-full h-full" />
+            </div>
+            <p className="font-semibold text-sm">Tim</p>
+          </div>
+          <div className="flex flex-col items-center gap-2">
+            <div className="rounded-2xl overflow-hidden w-36 h-44 bg-muted">
+              <Image src="/shane.png" alt="Shane" width={144} height={176} className="object-cover w-full h-full" />
+            </div>
+            <p className="font-semibold text-sm">Shane</p>
+          </div>
+        </div>
       </div>
     </div>
   );
