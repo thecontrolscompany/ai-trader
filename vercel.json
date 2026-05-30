@@ -1,9 +1,9 @@
 {
   "functions": {
-    "src/app/api/scan/route.ts":             { "maxDuration": 60 },
-    "src/app/api/auto-trade/run/route.ts":   { "maxDuration": 60 },
-    "src/app/api/cron/auto-trade/route.ts":  { "maxDuration": 60 },
-    "src/app/api/deploy/route.ts":           { "maxDuration": 60 }
+    "src/app/api/scan/route.ts":             { "maxDuration": 300 },
+    "src/app/api/auto-trade/run/route.ts":   { "maxDuration": 300 },
+    "src/app/api/cron/auto-trade/route.ts":  { "maxDuration": 300 },
+    "src/app/api/deploy/route.ts":           { "maxDuration": 300 }
   },
   "crons": [
     { "path": "/api/cron/auto-trade", "schedule": "30 13-20 * * 1-5" }
