@@ -1,7 +1,8 @@
 import { db } from "@/db";
-import { trades } from "@/db/schema";
+import { accounts, trades, transfers } from "@/db/schema";
+import { BROKERAGE_ID } from "@/lib/accounts";
 import { newId } from "@/lib/id";
-import { desc } from "drizzle-orm";
+import { eq, desc } from "drizzle-orm";
 import { NextRequest, NextResponse } from "next/server";
 
 export async function GET() {
@@ -12,15 +13,8 @@ export async function GET() {
 export async function POST(req: NextRequest) {
   const body = await req.json();
   const {
-    ticker,
-    assetClass = "stock",
-    direction,
-    entryPrice,
-    quantity,
-    stopLoss,
-    takeProfit,
-    notes,
-    aiSignalId,
+    ticker, assetClass = "stock", direction,
+    entryPrice, quantity, stopLoss, takeProfit, notes, aiSignalId,
   } = body;
 
   if (!ticker || !direction || entryPrice == null || quantity == null) {
@@ -30,10 +24,38 @@ export async function POST(req: NextRequest) {
     );
   }
 
-  const trade = await db
+  const cost = Number(entryPrice) * Number(quantity);
+
+  // Check brokerage has enough cash
+  const [brokerage] = await db.select().from(accounts).where(eq(accounts.id, BROKERAGE_ID)).limit(1);
+  if (!brokerage || brokerage.balance < cost) {
+    return NextResponse.json(
+      {
+        error: `Insufficient brokerage funds. Need $${cost.toFixed(2)}, have $${(brokerage?.balance ?? 0).toFixed(2)}. Transfer funds from your Bank Account first.`,
+      },
+      { status: 400 }
+    );
+  }
+
+  // Deduct cost from brokerage + record as transfer to self (trade hold)
+  const tradeId = newId();
+  await Promise.all([
+    db.update(accounts)
+      .set({ balance: brokerage.balance - cost })
+      .where(eq(accounts.id, BROKERAGE_ID)),
+    db.insert(transfers).values({
+      id: newId(),
+      fromAccountId: BROKERAGE_ID,
+      toAccountId: BROKERAGE_ID,
+      amount: cost,
+      note: `Trade opened: ${ticker.toUpperCase()} ×${quantity} @ $${Number(entryPrice).toFixed(2)}`,
+    }),
+  ]);
+
+  const [trade] = await db
     .insert(trades)
     .values({
-      id: newId(),
+      id: tradeId,
       ticker: ticker.toUpperCase(),
       assetClass,
       direction,
@@ -46,5 +68,5 @@ export async function POST(req: NextRequest) {
     })
     .returning();
 
-  return NextResponse.json(trade[0], { status: 201 });
+  return NextResponse.json(trade, { status: 201 });
 }

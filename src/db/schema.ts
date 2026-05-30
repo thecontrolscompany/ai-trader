@@ -11,16 +11,12 @@ import {
 export const assetClassEnum = pgEnum("asset_class", [
   "stock", "etf", "bond", "crypto", "option",
 ]);
-
 export const signalDirectionEnum = pgEnum("signal_direction", [
   "long", "short", "neutral",
 ]);
-
 export const tradeDirEnum = pgEnum("trade_direction", ["long", "short"]);
-
-export const tradeStatusEnum = pgEnum("trade_status", [
-  "open", "closed", "cancelled",
-]);
+export const tradeStatusEnum = pgEnum("trade_status", ["open", "closed", "cancelled"]);
+export const accountTypeEnum = pgEnum("account_type", ["bank", "brokerage"]);
 
 export const aiSignals = pgTable("ai_signals", {
   id: uuid("id").primaryKey().default(sql`gen_random_uuid()`),
@@ -34,6 +30,23 @@ export const aiSignals = pgTable("ai_signals", {
   timeHorizon: text("time_horizon").notNull(),
   confidence: doublePrecision("confidence").notNull(),
   reasoning: text("reasoning").notNull(),
+  createdAt: timestamp("created_at").notNull().defaultNow(),
+});
+
+export const accounts = pgTable("accounts", {
+  id: uuid("id").primaryKey().default(sql`gen_random_uuid()`),
+  name: text("name").notNull(),
+  type: accountTypeEnum("type").notNull(),
+  balance: doublePrecision("balance").notNull().default(0),
+  createdAt: timestamp("created_at").notNull().defaultNow(),
+});
+
+export const transfers = pgTable("transfers", {
+  id: uuid("id").primaryKey().default(sql`gen_random_uuid()`),
+  fromAccountId: uuid("from_account_id").notNull().references(() => accounts.id),
+  toAccountId: uuid("to_account_id").notNull().references(() => accounts.id),
+  amount: doublePrecision("amount").notNull(),
+  note: text("note"),
   createdAt: timestamp("created_at").notNull().defaultNow(),
 });
 
@@ -58,3 +71,5 @@ export type Trade = typeof trades.$inferSelect;
 export type NewTrade = typeof trades.$inferInsert;
 export type AISignal = typeof aiSignals.$inferSelect;
 export type NewAISignal = typeof aiSignals.$inferInsert;
+export type Account = typeof accounts.$inferSelect;
+export type Transfer = typeof transfers.$inferSelect;
