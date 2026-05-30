@@ -1,6 +1,6 @@
 "use client";
 
-import { useEffect, useState } from "react";
+import { useEffect, useMemo, useState } from "react";
 import { Badge } from "@/components/ui/badge";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import type { RiskLevel, ScanModel, ScanResult } from "@/app/api/scan/route";
@@ -142,6 +142,9 @@ export default function ScanPage() {
   const [openTradeFor, setOpenTradeFor] = useState<string | null>(null);
   const [addedTrades, setAddedTrades] = useState<Set<string>>(new Set());
   const [brokerageBalance, setBrokerageBalance] = useState(0);
+  const [filterRisk, setFilterRisk] = useState<RiskLevel | "all">("all");
+  const [filterDir, setFilterDir] = useState<"all" | "long" | "short">("all");
+  const [sortBy, setSortBy] = useState<"confidence" | "rr" | "gain">("confidence");
 
   useEffect(() => {
     fetch("/api/accounts")
@@ -174,12 +177,27 @@ export default function ScanPage() {
     }
   }
 
+  const filteredPicks = useMemo(() => {
+    if (!result) return [];
+    return result.picks
+      .filter((p) => filterRisk === "all" || p.riskLevel === filterRisk)
+      .filter((p) => filterDir === "all" || p.direction === filterDir)
+      .sort((a, b) => {
+        if (sortBy === "confidence") return b.confidence - a.confidence;
+        if (sortBy === "rr") {
+          const rrVal = (p: typeof a) => parseFloat(p.riskRewardRatio?.split(":")[1] ?? "0");
+          return rrVal(b) - rrVal(a);
+        }
+        return (b.maxGainDollar ?? 0) - (a.maxGainDollar ?? 0);
+      });
+  }, [result, filterRisk, filterDir, sortBy]);
+
   return (
     <div className="space-y-8 max-w-4xl">
       <div>
         <h1 className="text-2xl font-black tracking-tight">AI Stock Scanner</h1>
         <p className="text-muted-foreground text-sm mt-1">
-          Let AI scan stocks and flag the best beginner-friendly opportunities.
+          Hunting for diamonds in the rough — overlooked stocks with real potential.
         </p>
       </div>
 
@@ -229,13 +247,45 @@ export default function ScanPage() {
             <CardContent><p className="text-base leading-relaxed">{result.summary}</p></CardContent>
           </Card>
 
+          {/* Filters + Sort */}
+          <div className="flex flex-wrap gap-3 items-center">
+            {/* Risk filter */}
+            <div className="flex items-center gap-1 rounded-xl border border-border p-1">
+              {(["all", "conservative", "moderate", "aggressive"] as const).map((r) => (
+                <button key={r} onClick={() => setFilterRisk(r)}
+                  className={`px-3 py-1 rounded-lg text-xs font-semibold capitalize transition-colors ${filterRisk === r ? "bg-primary text-primary-foreground" : "text-muted-foreground hover:text-foreground"}`}>
+                  {r === "all" ? "All Risk" : r}
+                </button>
+              ))}
+            </div>
+            {/* Direction filter */}
+            <div className="flex items-center gap-1 rounded-xl border border-border p-1">
+              {(["all", "long", "short"] as const).map((d) => (
+                <button key={d} onClick={() => setFilterDir(d)}
+                  className={`px-3 py-1 rounded-lg text-xs font-semibold capitalize transition-colors ${filterDir === d ? "bg-primary text-primary-foreground" : "text-muted-foreground hover:text-foreground"}`}>
+                  {d === "all" ? "Long + Short" : d}
+                </button>
+              ))}
+            </div>
+            {/* Sort */}
+            <div className="flex items-center gap-1 rounded-xl border border-border p-1 ml-auto">
+              <span className="text-xs text-muted-foreground px-2">Sort:</span>
+              {([["confidence", "Confidence"], ["rr", "Risk:Reward"], ["gain", "Max Gain"]] as const).map(([val, label]) => (
+                <button key={val} onClick={() => setSortBy(val)}
+                  className={`px-3 py-1 rounded-lg text-xs font-semibold transition-colors ${sortBy === val ? "bg-primary text-primary-foreground" : "text-muted-foreground hover:text-foreground"}`}>
+                  {label}
+                </button>
+              ))}
+            </div>
+          </div>
+
           {/* Picks */}
           <div>
             <p className="text-sm font-semibold uppercase tracking-wide text-muted-foreground mb-4">
-              {result.picks.length} Pick{result.picks.length !== 1 ? "s" : ""} Found
+              {filteredPicks.length} of {result.picks.length} Pick{result.picks.length !== 1 ? "s" : ""}
             </p>
             <div className="grid gap-4">
-              {result.picks.map((pick) => (
+              {filteredPicks.map((pick) => (
                 <Card key={pick.symbol} className="overflow-hidden">
                   <CardContent className="p-0">
                     {/* Header */}

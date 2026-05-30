@@ -1,6 +1,7 @@
 import { db } from "@/db";
 import { accounts, trades, transfers } from "@/db/schema";
 import { BROKERAGE_ID } from "@/lib/accounts";
+import { calcSellFees } from "@/lib/fees";
 import { newId } from "@/lib/id";
 import { eq } from "drizzle-orm";
 import { NextRequest, NextResponse } from "next/server";
@@ -35,21 +36,26 @@ export async function PATCH(
   // When closing a trade, return proceeds to brokerage
   if (body.status === "closed" && existing.status === "open" && body.exitPrice != null) {
     updates.closedAt = new Date();
-    const proceeds = Number(body.exitPrice) * existing.quantity;
+    const exitPrice = Number(body.exitPrice);
+    const sellFees = calcSellFees(exitPrice, existing.quantity);
+    const grossProceeds = exitPrice * existing.quantity;
+    const netProceeds = grossProceeds - sellFees;
     const [brokerage] = await db.select().from(accounts).where(eq(accounts.id, BROKERAGE_ID)).limit(1);
-    const pnl = proceeds - existing.entryPrice * existing.quantity;
+    const pnl = netProceeds - existing.entryPrice * existing.quantity;
     const pnlSign = pnl >= 0 ? "+" : "";
+
+    updates.fees = (existing.fees ?? 0) + sellFees;
 
     await Promise.all([
       db.update(accounts)
-        .set({ balance: brokerage.balance + proceeds })
+        .set({ balance: brokerage.balance + netProceeds })
         .where(eq(accounts.id, BROKERAGE_ID)),
       db.insert(transfers).values({
         id: newId(),
         fromAccountId: BROKERAGE_ID,
         toAccountId: BROKERAGE_ID,
-        amount: proceeds,
-        note: `Trade closed: ${existing.ticker} ×${existing.quantity} @ $${Number(body.exitPrice).toFixed(2)} (P&L: ${pnlSign}$${pnl.toFixed(2)})`,
+        amount: netProceeds,
+        note: `Trade closed: ${existing.ticker} ×${existing.quantity} @ $${exitPrice.toFixed(2)} — fees: $${sellFees.toFixed(2)} — P&L: ${pnlSign}$${pnl.toFixed(2)}`,
       }),
     ]);
   }

@@ -61,6 +61,7 @@ export const trades = pgTable("trades", {
   stopLoss: doublePrecision("stop_loss"),
   takeProfit: doublePrecision("take_profit"),
   exitPrice: doublePrecision("exit_price"),
+  fees: doublePrecision("fees").notNull().default(0),
   openedAt: timestamp("opened_at").notNull().defaultNow(),
   closedAt: timestamp("closed_at"),
   notes: text("notes"),

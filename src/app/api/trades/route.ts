@@ -1,6 +1,7 @@
 import { db } from "@/db";
 import { accounts, trades, transfers } from "@/db/schema";
 import { BROKERAGE_ID } from "@/lib/accounts";
+import { calcBuyFees } from "@/lib/fees";
 import { newId } from "@/lib/id";
 import { eq, desc } from "drizzle-orm";
 import { NextRequest, NextResponse } from "next/server";
@@ -24,7 +25,8 @@ export async function POST(req: NextRequest) {
     );
   }
 
-  const cost = Number(entryPrice) * Number(quantity);
+  const buyFees = calcBuyFees();
+  const cost = Number(entryPrice) * Number(quantity) + buyFees;
 
   // Check brokerage has enough cash
   const [brokerage] = await db.select().from(accounts).where(eq(accounts.id, BROKERAGE_ID)).limit(1);
@@ -48,7 +50,7 @@ export async function POST(req: NextRequest) {
       fromAccountId: BROKERAGE_ID,
       toAccountId: BROKERAGE_ID,
       amount: cost,
-      note: `Trade opened: ${ticker.toUpperCase()} ×${quantity} @ $${Number(entryPrice).toFixed(2)}`,
+      note: `Trade opened: ${ticker.toUpperCase()} ×${quantity} @ $${Number(entryPrice).toFixed(2)} (fees: $${buyFees.toFixed(2)})`,
     }),
   ]);
 
@@ -65,6 +67,7 @@ export async function POST(req: NextRequest) {
       takeProfit: takeProfit != null ? Number(takeProfit) : null,
       notes: notes ?? null,
       aiSignalId: aiSignalId ?? null,
+      fees: buyFees,
     })
     .returning();
 

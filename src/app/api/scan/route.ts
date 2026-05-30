@@ -57,17 +57,27 @@ function buildUserPrompt(stocks: StockRow[], modelLabel: string): string {
     divYld: s.dividendYield ? +(s.dividendYield * 100).toFixed(2) + "%" : null,
   }));
 
-  return `You are scanning ${stocks.length} stocks to find the best 6-8 opportunities for a BEGINNER investor.
+  return `You are scanning ${stocks.length} stocks to find 6-10 opportunities — prioritizing DIAMONDS IN THE ROUGH over well-known names.
 
-Criteria for a good beginner pick:
-- P/E under 25 (company isn't overpriced relative to earnings)
-- Positive EPS (company is actually profitable)
-- Beta under 1.5 (not wildly volatile)
-- Price at least 10% below 52-week high (some room to grow)
-- Market cap over $5B (established, safer companies)
-- Strong volume (easy to buy and sell)
+Your goal: find overlooked, undervalued, or under-the-radar stocks with real potential.
+Avoid defaulting to Apple, Microsoft, Amazon, Google, Tesla, Nvidia — only include mega-caps if they are genuinely compelling versus the alternatives.
+Favor lesser-known companies that most people haven't heard of but show strong fundamentals.
 
-Bonus points: dividend yield, strong market cap, price near 52-week low.
+What makes a diamond in the rough:
+- Smaller or mid-size company (market cap $500M–$20B preferred)
+- Beaten down price (near 52-week low) but healthy earnings or growth
+- Low P/E relative to peers or sector
+- Strong EPS that the market hasn't priced in yet
+- Catalyst potential: sector tailwinds, recent product launch, recovering from overblown bad news
+- High short interest (shorts may have to cover = squeeze potential)
+- Low analyst coverage = market inefficiency = opportunity
+
+Also include 1-2 SHORT candidates if any stocks look dangerously overvalued or technically broken.
+
+Stock data (mktCap in billions):
+${JSON.stringify(compact)}
+
+Mix of risk levels expected: include at least 1 conservative, 2-3 moderate, 1-2 aggressive picks.
 
 Stock data (mktCap in billions):
 ${JSON.stringify(compact)}
