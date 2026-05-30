@@ -184,27 +184,21 @@ export async function runAutoTrade(force = false): Promise<AutoTradeResult> {
     return true;
   }).slice(0, remaining);
 
-  // Capital allocation: spread mode divides available cash evenly across picks
-  const deployMode = (settings as any).deployMode ?? "spread";
-  const slotCount  = Math.max(1, qualifyingPicks.length);
-  const perSlot    = deployMode === "fixed"
-    ? brokerBalance * settings.maxPositionPct          // fixed % per trade
-    : brokerBalance / slotCount;                        // spread evenly
+  const deployMode   = (settings as any).deployMode ?? "spread";
+  let remainingSlots = Math.max(1, qualifyingPicks.length);
 
   for (const rawPick of qualifyingPicks) {
     // eslint-disable-next-line @typescript-eslint/no-explicit-any
     const pick = rawPick as any;
     if (remaining <= 0) break;
-    if ((Number(pick.confidence) ?? 0) < settings.minConfidence) {
-      result.skipped.push(`${pick.symbol} (confidence ${(Number(pick.confidence) * 100).toFixed(0)}% < ${(settings.minConfidence * 100).toFixed(0)}% threshold)`);
-      continue;
-    }
-    if (openTickers.has(String(pick.symbol))) {
-      result.skipped.push(`${pick.symbol} (position already open)`);
-      continue;
-    }
+
+    // Recalculate per-slot each iteration so undeployed cash rolls forward
+    const perSlot = deployMode === "fixed"
+      ? brokerBalance * settings.maxPositionPct
+      : brokerBalance / remainingSlots;
+
     const entryPrice = Number(pick.entryZoneLow);
-    const invest     = Math.min(perSlot, brokerBalance); // never exceed available balance
+    const invest     = Math.min(perSlot, brokerBalance);
     const qty        = invest / entryPrice;
     if (invest < 1 || brokerBalance < 1) {
       result.skipped.push(`${pick.symbol} (insufficient brokerage funds)`);
@@ -222,12 +216,15 @@ export async function runAutoTrade(force = false): Promise<AutoTradeResult> {
         aiSignalId: null,
       });
       brokerBalance -= invest;
+      remainingSlots = Math.max(1, remainingSlots - 1);
       await db.update(accounts).set({ balance: brokerBalance }).where(eq(accounts.id, BROKERAGE_ID));
-      await log("opened", pick.symbol, tradeId, `Confidence ${(pick.confidence * 100).toFixed(0)}% · ${pick.riskLevel ?? "moderate"} risk`);
+      await log("opened", pick.symbol, tradeId,
+        `Confidence ${(Number(pick.confidence) * 100).toFixed(0)}% · ${pick.riskLevel ?? "moderate"} risk · invested $${invest.toFixed(2)}`);
       openTickers.add(pick.symbol);
-      result.opened.push(`${pick.symbol} (${qty.toFixed(3)} shares @ $${entryPrice.toFixed(2)})`);
+      result.opened.push(`${pick.symbol} — ${qty.toFixed(4)} shares @ $${entryPrice.toFixed(2)} ($${invest.toFixed(2)})`);
       remaining--;
     } catch (e) {
+      remainingSlots = Math.max(1, remainingSlots - 1);
       result.errors.push(`Open ${pick.symbol}: ${e}`);
     }
   }

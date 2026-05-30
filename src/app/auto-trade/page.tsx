@@ -171,13 +171,14 @@ export default function AutoTradePage() {
           {/* Max trades / day */}
           <div>
             <div className="flex justify-between mb-1">
-              <label className="text-xs text-muted-foreground uppercase tracking-wide font-semibold">Max Trades / Day</label>
+              <label className="text-xs text-muted-foreground uppercase tracking-wide font-semibold">Max Open Positions (total)</label>
               <span className="text-sm font-bold text-primary">{settings.maxTradesPerDay}</span>
             </div>
-            <input type="range" min="1" max="10" step="1"
+            <input type="range" min="1" max="20" step="1"
               value={settings.maxTradesPerDay}
               onChange={(e) => save({ maxTradesPerDay: Number(e.target.value) })}
               className="w-full accent-primary" />
+            <p className="text-xs text-muted-foreground mt-1">Caps total new trades opened per day across all scans. Set higher to let spread mode fully deploy your balance.</p>
           </div>
 
           {/* Capital deployment mode */}
