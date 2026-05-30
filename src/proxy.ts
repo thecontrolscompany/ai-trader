@@ -1,23 +1,16 @@
 import { auth } from "@/auth";
 import { NextResponse } from "next/server";
 
+// Only these paths require login — everything else is public
+const PROTECTED = ["/scan", "/trades", "/api/scan", "/api/trades"];
+
 export default auth((req) => {
-  const isLoggedIn = !!req.auth;
   const { pathname } = req.nextUrl;
+  const isLoggedIn = !!req.auth;
 
-  // Always allow: auth callbacks, login page, public assets
-  const isPublic =
-    pathname.startsWith("/api/auth") ||
-    pathname.startsWith("/login") ||
-    pathname.startsWith("/_next") ||
-    pathname.startsWith("/tim.png") ||
-    pathname.startsWith("/shane.png") ||
-    pathname === "/favicon.ico";
+  const needsAuth = PROTECTED.some((p) => pathname.startsWith(p));
 
-  if (isPublic) return NextResponse.next();
-
-  // Not logged in → redirect to login
-  if (!isLoggedIn) {
+  if (needsAuth && !isLoggedIn) {
     const loginUrl = new URL("/login", req.url);
     loginUrl.searchParams.set("callbackUrl", pathname);
     return NextResponse.redirect(loginUrl);
@@ -27,5 +20,5 @@ export default auth((req) => {
 });
 
 export const config = {
-  matcher: ["/((?!_next/static|_next/image|favicon.ico).*)"],
+  matcher: ["/((?!_next/static|_next/image|favicon.ico|tim.png|shane.png).*)"],
 };

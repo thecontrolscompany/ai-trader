@@ -1,38 +1,28 @@
 import { signIn } from "@/auth";
-import Image from "next/image";
 
-export default function LoginPage({
+export default async function LoginPage({
   searchParams,
 }: {
-  searchParams: Promise<{ error?: string; callbackUrl?: string }>;
+  searchParams: Promise<{ callbackUrl?: string }>;
 }) {
+  const { callbackUrl } = await searchParams;
+
   return (
-    <div className="min-h-screen flex flex-col items-center justify-center bg-background px-4">
-
-      {/* Portraits */}
-      <div className="flex items-end gap-2 mb-6">
-        <div className="w-20 h-28 rounded-t-2xl overflow-hidden">
-          <Image src="/tim.png" alt="Tim" width={80} height={112} className="object-cover object-top w-full h-full" />
-        </div>
-        <div className="w-20 h-28 rounded-t-2xl overflow-hidden">
-          <Image src="/shane.png" alt="Shane" width={80} height={112} className="object-cover object-top w-full h-full" />
-        </div>
-      </div>
-
-      {/* Card */}
+    <div className="flex flex-col items-center justify-center py-24 px-4">
       <div className="w-full max-w-sm rounded-2xl border border-border bg-card p-8 space-y-6 text-center">
         <div>
           <h1 className="text-2xl font-black">
-            <span className="text-primary">Tim &amp; Shane</span> Stocks
+            <span className="text-primary">Sign in</span> to continue
           </h1>
-          <p className="text-muted-foreground text-sm mt-1">Private trading research platform</p>
+          <p className="text-muted-foreground text-sm mt-1">
+            Access AI Scan, trade tracking, and your portfolio.
+          </p>
         </div>
 
         <form
           action={async () => {
             "use server";
-            const params = await searchParams;
-            await signIn("google", { redirectTo: params.callbackUrl ?? "/" });
+            await signIn("google", { redirectTo: callbackUrl ?? "/scan" });
           }}
         >
           <button
@@ -50,7 +40,7 @@ export default function LoginPage({
         </form>
 
         <p className="text-xs text-muted-foreground">
-          Access is restricted to authorized users only.
+          Access restricted to authorized users.
         </p>
       </div>
     </div>

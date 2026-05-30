@@ -2,32 +2,39 @@
 
 import Image from "next/image";
 import Link from "next/link";
-import { signOut } from "next-auth/react";
+import { signIn, signOut } from "next-auth/react";
 import { usePathname } from "next/navigation";
 import { useState } from "react";
 
-const navLinks = [
-  { href: "/", label: "Dashboard" },
-  { href: "/stocks", label: "Top 100" },
-  { href: "/scan", label: "AI Scan" },
-  { href: "/trades", label: "My Trades" },
-  { href: "/trades/new", label: "+ New Trade" },
+// Always visible — no login required
+const publicLinks = [
+  { href: "/", label: "Top 100" },
+];
+
+// Only shown when logged in
+const privateLinks = [
+  { href: "/scan",        label: "AI Scan" },
+  { href: "/dashboard",   label: "Portfolio" },
+  { href: "/trades",      label: "My Trades" },
+  { href: "/trades/new",  label: "+ New Trade" },
 ];
 
 interface Props {
+  isLoggedIn: boolean;
   userName?: string | null;
   userImage?: string | null;
 }
 
-export default function NavBar({ userName, userImage }: Props) {
+export default function NavBar({ isLoggedIn, userName, userImage }: Props) {
   const pathname = usePathname();
   const [open, setOpen] = useState(false);
 
   function isActive(href: string) {
-    if (href === "/") return pathname === "/";
+    if (href === "/") return pathname === "/" || pathname === "/stocks";
     return pathname.startsWith(href);
   }
 
+  const visibleLinks = isLoggedIn ? [...publicLinks, ...privateLinks] : publicLinks;
   const firstName = userName?.split(" ")[0] ?? null;
 
   return (
@@ -52,7 +59,7 @@ export default function NavBar({ userName, userImage }: Props) {
 
         {/* Desktop nav */}
         <nav className="hidden md:flex items-center gap-1 ml-auto">
-          {navLinks.map((l) => (
+          {visibleLinks.map((l) => (
             <Link
               key={l.href}
               href={l.href}
@@ -66,18 +73,29 @@ export default function NavBar({ userName, userImage }: Props) {
             </Link>
           ))}
 
-          {/* User + sign out */}
+          {/* Auth controls */}
           <div className="flex items-center gap-2 ml-2 pl-2 border-l border-border">
-            {userImage && (
-              <img src={userImage} alt={userName ?? ""} className="w-7 h-7 rounded-full" referrerPolicy="no-referrer" />
+            {isLoggedIn ? (
+              <>
+                {userImage && (
+                  <img src={userImage} alt={userName ?? ""} className="w-7 h-7 rounded-full" referrerPolicy="no-referrer" />
+                )}
+                {firstName && <span className="text-sm text-muted-foreground">{firstName}</span>}
+                <button
+                  onClick={() => signOut({ callbackUrl: "/" })}
+                  className="text-xs px-2 py-1 rounded-lg text-muted-foreground hover:text-foreground hover:bg-accent transition-colors"
+                >
+                  Sign out
+                </button>
+              </>
+            ) : (
+              <button
+                onClick={() => signIn("google", { callbackUrl: "/scan" })}
+                className="text-xs px-3 py-1.5 rounded-lg border border-border text-muted-foreground hover:text-foreground hover:border-primary transition-colors font-medium"
+              >
+                Sign in
+              </button>
             )}
-            {firstName && <span className="text-sm text-muted-foreground">{firstName}</span>}
-            <button
-              onClick={() => signOut({ callbackUrl: "/login" })}
-              className="text-xs px-2 py-1 rounded-lg text-muted-foreground hover:text-foreground hover:bg-accent transition-colors"
-            >
-              Sign out
-            </button>
           </div>
         </nav>
 
@@ -96,7 +114,7 @@ export default function NavBar({ userName, userImage }: Props) {
       {/* Mobile dropdown */}
       {open && (
         <div className="md:hidden border-t border-border bg-background px-4 py-3 flex flex-col gap-1">
-          {navLinks.map((l) => (
+          {visibleLinks.map((l) => (
             <Link
               key={l.href}
               href={l.href}
@@ -110,12 +128,31 @@ export default function NavBar({ userName, userImage }: Props) {
               {l.label}
             </Link>
           ))}
-          <button
-            onClick={() => signOut({ callbackUrl: "/login" })}
-            className="px-4 py-3 rounded-xl text-sm font-semibold text-left text-muted-foreground hover:text-foreground hover:bg-accent transition-colors"
-          >
-            Sign out {firstName ? `(${firstName})` : ""}
-          </button>
+
+          {/* Auth row in mobile menu */}
+          <div className="mt-1 pt-2 border-t border-border">
+            {isLoggedIn ? (
+              <div className="flex items-center justify-between px-4 py-2">
+                <div className="flex items-center gap-2">
+                  {userImage && <img src={userImage} alt={userName ?? ""} className="w-6 h-6 rounded-full" referrerPolicy="no-referrer" />}
+                  <span className="text-sm text-muted-foreground">{firstName}</span>
+                </div>
+                <button
+                  onClick={() => { setOpen(false); signOut({ callbackUrl: "/" }); }}
+                  className="text-xs px-3 py-1.5 rounded-lg border border-border text-muted-foreground hover:text-foreground transition-colors"
+                >
+                  Sign out
+                </button>
+              </div>
+            ) : (
+              <button
+                onClick={() => { setOpen(false); signIn("google", { callbackUrl: "/scan" }); }}
+                className="w-full text-left px-4 py-3 rounded-xl text-sm font-semibold text-muted-foreground hover:text-foreground hover:bg-accent transition-colors"
+              >
+                Sign in to access AI Scan &amp; Trades →
+              </button>
+            )}
+          </div>
         </div>
       )}
     </header>
