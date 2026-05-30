@@ -137,7 +137,7 @@ export async function callClaude(stocks: StockRow[]): Promise<RawScanResult> {
   const historicalContext = await getHistoricalScanContext();
   const universe = stocks.length > 0 && hasTrendFields(stocks[0])
     ? stocks as EnrichedStockRow[]
-    : await enrichStockUniverse(stocks, 20);
+    : await enrichStockUniverse(stocks, 40);
   const prompt = buildUserPrompt(universe, "Claude Sonnet 4.6", historicalContext);
   const response = await client.messages.create({
     model: "claude-sonnet-4-6",
@@ -163,7 +163,7 @@ export async function callOpenAI(stocks: StockRow[]): Promise<RawScanResult> {
   const historicalContext = await getHistoricalScanContext();
   const universe = stocks.length > 0 && hasTrendFields(stocks[0])
     ? stocks as EnrichedStockRow[]
-    : await enrichStockUniverse(stocks, 20);
+    : await enrichStockUniverse(stocks, 40);
   const prompt = buildUserPrompt(universe, "GPT-4o", historicalContext);
   const response = await client.chat.completions.create({
     model: "gpt-4o",
