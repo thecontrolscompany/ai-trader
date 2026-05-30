@@ -20,16 +20,23 @@ const ACTION_COLOR: Record<string, string> = {
 
 export default function AutoTradePage() {
   const [settings, setSettings] = useState<Settings | null>(null);
+  const [loadError, setLoadError] = useState<string | null>(null);
   const [log, setLog] = useState<LogEntry[]>([]);
   const [saving, setSaving] = useState(false);
   const [running, setRunning] = useState(false);
   const [runResult, setRunResult] = useState<string | null>(null);
 
   async function load() {
-    const res = await fetch("/api/auto-trade");
-    const data = await res.json();
-    setSettings(data.settings);
-    setLog(data.log ?? []);
+    try {
+      const res = await fetch("/api/auto-trade");
+      if (!res.ok) { setLoadError(`Server error ${res.status}`); return; }
+      const data = await res.json();
+      if (!data.settings) { setLoadError("Settings not returned from server"); return; }
+      setSettings(data.settings);
+      setLog(data.log ?? []);
+    } catch (e) {
+      setLoadError(`Network error: ${e}`);
+    }
   }
   useEffect(() => { load(); }, []);
 
@@ -55,7 +62,24 @@ export default function AutoTradePage() {
     setRunning(false);
   }
 
-  if (!settings) return <p className="text-muted-foreground text-sm">Loading…</p>;
+  if (loadError) return (
+    <div className="space-y-4 max-w-xl">
+      <h1 className="text-2xl font-black">Auto Trading</h1>
+      <div className="rounded-xl border border-destructive/50 bg-destructive/10 p-4 text-sm text-destructive">
+        <p className="font-semibold mb-1">Failed to load settings</p>
+        <p className="font-mono text-xs">{loadError}</p>
+      </div>
+      <button onClick={() => { setLoadError(null); load(); }}
+        className="text-sm text-primary underline">Try again</button>
+    </div>
+  );
+
+  if (!settings) return (
+    <div className="space-y-4 max-w-xl">
+      <h1 className="text-2xl font-black">Auto Trading</h1>
+      <p className="text-muted-foreground text-sm animate-pulse">Loading settings…</p>
+    </div>
+  );
 
   const isEnabled = settings.enabled === "true";
 
