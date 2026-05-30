@@ -21,6 +21,7 @@ import { calcSellFees } from "@/lib/fees";
 import { newId } from "@/lib/id";
 import { fetchTopStocks } from "@/lib/fetchStocks";
 import { calcShares } from "@/lib/shares";
+import { saveScanSignals } from "@/lib/roiTracker";
 import { eq, and, gte, sql } from "drizzle-orm";
 
 const SETTINGS_ID = "00000000-0000-0000-0000-000000000010";
@@ -138,7 +139,7 @@ export async function runAutoTrade(force = false): Promise<AutoTradeResult> {
     return result;
   }
 
-  let picks: { picks?: Record<string, unknown>[] } | null = null;
+  let picks: { model?: string; picks?: Record<string, unknown>[]; estimatedCostUsd?: number } | null = null;
   try {
     const stocks = await fetchTopStocks();
     const { callClaude, callOpenAI } = await import("@/lib/scanHelpers");
@@ -151,6 +152,27 @@ export async function runAutoTrade(force = false): Promise<AutoTradeResult> {
     return result;
   }
 
+  const normalized = ((picks?.picks ?? []) as Record<string, unknown>[])
+    .map((pick) => ({
+      symbol: String(pick.symbol ?? ""),
+      direction: (pick.direction as "long" | "short" | "neutral") ?? "long",
+      entryZoneLow: Number(pick.entryZoneLow ?? 0),
+      entryZoneHigh: Number(pick.entryZoneHigh ?? pick.entryZoneLow ?? 0),
+      targetPrice: Number(pick.targetPrice ?? 0),
+      stopLoss: Number(pick.stopLoss ?? 0),
+      timeHorizon: String(pick.timeHorizon ?? "unknown"),
+      confidence: Number(pick.confidence ?? 0.5),
+      reasoning: String(pick.reasoning ?? ""),
+      riskLevel: String(pick.riskLevel ?? "moderate"),
+    }))
+    .filter((pick) => pick.symbol && pick.entryZoneLow > 0);
+
+  const saved = await saveScanSignals(
+    normalized,
+    picks?.model ?? settings.model,
+    picks?.estimatedCostUsd ?? 0
+  );
+
   const openTickers = new Set(
     (await db.select().from(trades).where(eq(trades.status, "open"))).map((t) => t.ticker)
   );
@@ -159,9 +181,7 @@ export async function runAutoTrade(force = false): Promise<AutoTradeResult> {
   let availableBalance = brokerBalance;
 
   // Filter qualifying picks up-front so we can size positions intelligently
-  // eslint-disable-next-line @typescript-eslint/no-explicit-any
-  const qualifyingPicks: any[] = (picks?.picks ?? []).filter((rawPick: any) => {
-    const pick = rawPick as any;
+  const qualifyingPicks = saved.filter((pick) => {
     if (Number(pick.confidence ?? 0) < settings.minConfidence) return false;
     if (openTickers.has(String(pick.symbol))) return false;
     return true;
@@ -170,9 +190,7 @@ export async function runAutoTrade(force = false): Promise<AutoTradeResult> {
   const deployMode   = (settings as any).deployMode ?? "spread";
   let remainingSlots = Math.max(1, qualifyingPicks.length);
 
-  for (const rawPick of qualifyingPicks) {
-    // eslint-disable-next-line @typescript-eslint/no-explicit-any
-    const pick = rawPick as any;
+  for (const pick of qualifyingPicks) {
     if (remaining <= 0) break;
 
     // Recalculate per-slot each iteration so undeployed cash rolls forward
@@ -206,7 +224,7 @@ export async function runAutoTrade(force = false): Promise<AutoTradeResult> {
         status: "open", entryPrice, quantity: qty,
         stopLoss: pick.stopLoss ?? null, takeProfit: pick.targetPrice ?? null,
         fees: 0, notes: `[AUTO] ${pick.reasoning?.slice(0, 200) ?? ""}`,
-        aiSignalId: null,
+        aiSignalId: pick.signalId ?? null,
       });
       availableBalance -= invest;
       remainingSlots = Math.max(1, remainingSlots - 1);

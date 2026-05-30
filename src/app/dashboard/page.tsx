@@ -1,6 +1,7 @@
 import { db } from "@/db";
 import { trades } from "@/db/schema";
 import { calcRealizedPnl } from "@/lib/pnl";
+import { getAiRoiSummary } from "@/lib/roiTracker";
 import type { Trade } from "@/lib/types";
 import { Badge } from "@/components/ui/badge";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
@@ -28,6 +29,7 @@ function buildSummary(rows: Trade[]) {
 export default async function DashboardPage() {
   const rows = (await db.select().from(trades)) as Trade[];
   const s = buildSummary(rows);
+  const roi = await getAiRoiSummary();
   const openTrades = rows.filter((t) => t.status === "open").slice(0, 10);
 
   return (
@@ -93,6 +95,113 @@ export default async function DashboardPage() {
             </p>
           </CardContent>
         </Card>
+      </div>
+
+      <div>
+        <div className="flex items-center justify-between mb-3">
+          <h2 className="text-lg font-semibold">AI ROI Tracker</h2>
+          <p className="text-xs text-muted-foreground">
+            Estimated spend vs. realized P&amp;L from linked signals
+          </p>
+        </div>
+        <div className="grid grid-cols-2 gap-4 sm:grid-cols-4">
+          <Card>
+            <CardHeader className="pb-1">
+              <CardTitle className="text-xs font-medium text-muted-foreground uppercase tracking-wide">
+                Estimated Spend
+              </CardTitle>
+            </CardHeader>
+            <CardContent>
+              <p className="text-2xl font-bold">${roi.estimatedSpend.toFixed(2)}</p>
+            </CardContent>
+          </Card>
+          <Card>
+            <CardHeader className="pb-1">
+              <CardTitle className="text-xs font-medium text-muted-foreground uppercase tracking-wide">
+                Linked P&amp;L
+              </CardTitle>
+            </CardHeader>
+            <CardContent>
+              <p className={`text-2xl font-bold ${roi.realizedPnl > 0 ? "text-green-400" : roi.realizedPnl < 0 ? "text-red-400" : ""}`}>
+                {roi.realizedPnl >= 0 ? "+" : ""}${roi.realizedPnl.toFixed(2)}
+              </p>
+            </CardContent>
+          </Card>
+          <Card>
+            <CardHeader className="pb-1">
+              <CardTitle className="text-xs font-medium text-muted-foreground uppercase tracking-wide">
+                Net After Cost
+              </CardTitle>
+            </CardHeader>
+            <CardContent>
+              <p className={`text-2xl font-bold ${roi.netAfterCost > 0 ? "text-green-400" : roi.netAfterCost < 0 ? "text-red-400" : ""}`}>
+                {roi.netAfterCost >= 0 ? "+" : ""}${roi.netAfterCost.toFixed(2)}
+              </p>
+            </CardContent>
+          </Card>
+          <Card>
+            <CardHeader className="pb-1">
+              <CardTitle className="text-xs font-medium text-muted-foreground uppercase tracking-wide">
+                ROI
+              </CardTitle>
+            </CardHeader>
+            <CardContent>
+              <p className="text-2xl font-bold">
+                {roi.roiPct != null ? `${roi.roiPct >= 0 ? "+" : ""}${roi.roiPct.toFixed(1)}%` : "—"}
+              </p>
+            </CardContent>
+          </Card>
+        </div>
+        <Card className="mt-4">
+          <CardHeader className="pb-2">
+            <CardTitle className="text-sm font-semibold uppercase tracking-wide text-muted-foreground">
+              Tracker Notes
+            </CardTitle>
+          </CardHeader>
+          <CardContent className="space-y-2">
+            <p className="text-sm leading-relaxed">{roi.summary}</p>
+            <div className="space-y-1 text-xs text-muted-foreground">
+              {roi.highlights.map((line) => (
+                <p key={line}>{line}</p>
+              ))}
+              {roi.untrackedClosedTrades > 0 && (
+                <p>
+                  {roi.untrackedClosedTrades} closed trade(s) are not yet linked to an AI signal, so they are excluded from ROI.
+                </p>
+              )}
+            </div>
+          </CardContent>
+        </Card>
+        {roi.byModel.length > 0 && (
+          <div className="mt-4 rounded-lg border overflow-hidden">
+            <table className="w-full text-sm">
+              <thead className="bg-muted/50 text-xs uppercase tracking-wide text-muted-foreground">
+                <tr>
+                  <th className="px-4 py-3 text-left">Model</th>
+                  <th className="px-4 py-3 text-right">Signals</th>
+                  <th className="px-4 py-3 text-right">Closed</th>
+                  <th className="px-4 py-3 text-right">Spend</th>
+                  <th className="px-4 py-3 text-right">P&amp;L</th>
+                  <th className="px-4 py-3 text-right">Net</th>
+                </tr>
+              </thead>
+              <tbody className="divide-y">
+                {roi.byModel.map((row) => (
+                  <tr key={row.model} className="hover:bg-muted/30 transition-colors">
+                    <td className="px-4 py-3 font-semibold">{row.model}</td>
+                    <td className="px-4 py-3 text-right">{row.signalCount}</td>
+                    <td className="px-4 py-3 text-right">{row.closedTradeCount}</td>
+                    <td className="px-4 py-3 text-right">${row.estimatedSpend.toFixed(2)}</td>
+                    <td className="px-4 py-3 text-right">{row.realizedPnl >= 0 ? "+" : ""}${row.realizedPnl.toFixed(2)}</td>
+                    <td className="px-4 py-3 text-right font-semibold">
+                      {row.netAfterCost >= 0 ? "+" : ""}${row.netAfterCost.toFixed(2)}
+                    </td>
+                  </tr>
+                ))}
+              </tbody>
+            </table>
+          </div>
+        )}
       </div>
 
       {/* Open Positions */}

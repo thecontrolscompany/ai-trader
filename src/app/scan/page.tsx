@@ -12,8 +12,9 @@ const RISK_CONFIG: Record<RiskLevel, { label: string; color: string; bg: string;
 };
 
 const MODELS: { value: ScanModel; label: string; desc: string }[] = [
-  { value: "claude", label: "Claude Sonnet", desc: "Anthropic · Great at nuanced reasoning" },
-  { value: "openai", label: "GPT-4o",        desc: "OpenAI · Fast and thorough" },
+  { value: "openai", label: "Codex / OpenAI", desc: "Fast, structured, and thorough" },
+  { value: "claude", label: "Claude Sonnet", desc: "Great at nuanced reasoning" },
+  { value: "compare", label: "Compare Both", desc: "Runs both and surfaces consensus" },
 ];
 
 function ConfidenceBar({ value }: { value: number }) {
@@ -69,17 +70,17 @@ function OpenTradePanel({
     const res = await fetch("/api/trades", {
       method: "POST",
       headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({
-        ticker: pick.symbol,
-        direction: pick.direction === "short" ? "short" : "long",
-        entryPrice: price,
-        quantity: shares,
-        stopLoss: pick.stopLoss,
-        takeProfit: pick.targetPrice,
-        notes: pick.reasoning,
-        aiSignalId: pick.signalId,
-      }),
-    });
+        body: JSON.stringify({
+          ticker: pick.symbol,
+          direction: pick.direction === "short" ? "short" : "long",
+          entryPrice: price,
+          quantity: shares,
+          stopLoss: pick.stopLoss,
+          takeProfit: pick.targetPrice,
+          notes: pick.reasoning,
+          aiSignalId: pick.signalId ?? null,
+        }),
+      });
     const data = await res.json();
     if (!res.ok) { setErr(data.error); setBusy(false); return; }
     onAdded();
@@ -204,7 +205,7 @@ export default function ScanPage() {
       {/* Model selector */}
       <div className="space-y-3">
         <p className="text-sm font-semibold uppercase tracking-wide text-muted-foreground">Choose AI Model</p>
-        <div className="grid grid-cols-2 gap-3 max-w-md">
+        <div className="grid grid-cols-1 gap-3 sm:grid-cols-3 max-w-2xl">
           {MODELS.map((m) => (
             <button key={m.value} onClick={() => setSelectedModel(m.value)}
               className={`rounded-xl border-2 px-4 py-3 text-left transition-all ${selectedModel === m.value ? "border-primary bg-primary/10 text-foreground" : "border-border hover:border-muted-foreground text-muted-foreground"}`}>
@@ -244,8 +245,60 @@ export default function ScanPage() {
                 <span>{new Date(result.scannedAt).toLocaleTimeString()}</span>
               </CardTitle>
             </CardHeader>
-            <CardContent><p className="text-base leading-relaxed">{result.summary}</p></CardContent>
+            <CardContent className="space-y-2">
+              <p className="text-base leading-relaxed">{result.summary}</p>
+              {result.estimatedCostUsd != null && (
+                <p className="text-xs text-muted-foreground">
+                  Estimated model spend: ${result.estimatedCostUsd.toFixed(4)}
+                  {result.estimatedInputTokens != null && result.estimatedOutputTokens != null
+                    ? ` · ~${result.estimatedInputTokens} input tokens / ~${result.estimatedOutputTokens} output tokens`
+                    : ""}
+                </p>
+              )}
+            </CardContent>
           </Card>
+
+          {result.comparison && (
+            <div className="grid gap-4 sm:grid-cols-3">
+              <Card>
+                <CardHeader className="pb-2">
+                  <CardTitle className="text-xs font-semibold uppercase tracking-wide text-muted-foreground">
+                    Overlap
+                  </CardTitle>
+                </CardHeader>
+                <CardContent>
+                  <p className="text-2xl font-black">{result.comparison.overlapCount}</p>
+                  <p className="text-xs text-muted-foreground mt-1">Symbols both models liked</p>
+                </CardContent>
+              </Card>
+              <Card>
+                <CardHeader className="pb-2">
+                  <CardTitle className="text-xs font-semibold uppercase tracking-wide text-muted-foreground">
+                    OpenAI Only
+                  </CardTitle>
+                </CardHeader>
+                <CardContent>
+                  <p className="text-2xl font-black">{result.comparison.openaiOnly.length}</p>
+                  <p className="text-xs text-muted-foreground mt-1">
+                    {result.comparison.openaiOnly.slice(0, 3).join(", ") || "No unique names"}
+                  </p>
+                </CardContent>
+              </Card>
+              <Card>
+                <CardHeader className="pb-2">
+                  <CardTitle className="text-xs font-semibold uppercase tracking-wide text-muted-foreground">
+                    Claude Only
+                  </CardTitle>
+                </CardHeader>
+                <CardContent>
+                  <p className="text-2xl font-black">{result.comparison.claudeOnly.length}</p>
+                  <p className="text-xs text-muted-foreground mt-1">
+                    {result.comparison.claudeOnly.slice(0, 3).join(", ") || "No unique names"}
+                  </p>
+                </CardContent>
+              </Card>
+            </div>
+          )}
 
           {/* Filters + Sort */}
           <div className="flex flex-wrap gap-3 items-center">
@@ -299,6 +352,11 @@ export default function ScanPage() {
                               {pick.direction}
                             </Badge>
                             <span className="text-xs text-muted-foreground">{pick.timeHorizon}</span>
+                            {pick.agreementScore != null && (
+                              <span className="text-xs px-2 py-0.5 rounded-full border border-border text-muted-foreground">
+                                {pick.sourceModels?.length === 2 ? "Consensus" : pick.sourceModels?.[0] ?? "Single"}
+                              </span>
+                            )}
                           </div>
                         </div>
                       </div>
@@ -320,6 +378,18 @@ export default function ScanPage() {
                         <p className="text-xs text-muted-foreground mb-1.5 uppercase tracking-wide font-semibold">AI Confidence</p>
                         <ConfidenceBar value={pick.confidence} />
                       </div>
+
+                      {pick.setupQualityScore != null && (
+                        <div className="rounded-xl border border-border bg-muted/30 px-4 py-3 flex items-center justify-between gap-4 text-sm">
+                          <div>
+                            <p className="text-xs text-muted-foreground uppercase tracking-wide font-semibold">Setup Quality</p>
+                            <p className="font-black text-base">{pick.setupQualityScore}/100</p>
+                          </div>
+                          <p className="text-xs text-muted-foreground max-w-xl">
+                            {pick.trendSummary || "Historical trend data helped rank this setup before the model saw it."}
+                          </p>
+                        </div>
+                      )}
 
                       {/* Risk / Reward */}
                       {pick.riskLevel && (() => {
@@ -381,6 +451,13 @@ export default function ScanPage() {
                         <p className="text-xs text-muted-foreground mb-1.5 uppercase tracking-wide font-semibold">AI Reasoning</p>
                         <p className="text-sm leading-relaxed">{pick.reasoning}</p>
                       </div>
+
+                      {pick.sourceModels && pick.sourceModels.length > 0 && (
+                        <div className="text-xs text-muted-foreground">
+                          Source model{pick.sourceModels.length > 1 ? "s" : ""}: {pick.sourceModels.join(" + ")}
+                          {pick.agreementScore != null ? ` · agreement ${pick.agreementScore}/2` : ""}
+                        </div>
+                      )}
 
                       {/* Trade form */}
                       {openTradeFor === pick.symbol && (

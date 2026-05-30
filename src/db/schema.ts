@@ -30,6 +30,7 @@ export const aiSignals = pgTable("ai_signals", {
   timeHorizon: text("time_horizon").notNull(),
   confidence: doublePrecision("confidence").notNull(),
   reasoning: text("reasoning").notNull(),
+  estimatedScanCostUsd: doublePrecision("estimated_scan_cost_usd").notNull().default(0),
   createdAt: timestamp("created_at").notNull().defaultNow(),
 });
 

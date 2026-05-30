@@ -303,6 +303,73 @@ def export_report(cfg: dict):
     pause()
 
 
+def generate_dataset(cfg: dict):
+    """Option H — export a historical training dataset from price history."""
+    from src.datasets import generate_training_dataset
+
+    use_watchlist = input(
+        Fore.CYAN + "\nUse the configured watchlist symbols? [Y/n]: "
+    ).strip().lower()
+
+    if use_watchlist == "n":
+        raw = input("Enter comma-separated symbols: ").strip()
+        symbols = [s.strip().upper() for s in raw.split(",") if s.strip()]
+    else:
+        symbols = cfg.get("watchlist", [])
+
+    bt_cfg = cfg["backtest"]
+    start_date = bt_cfg["start_date"]
+    end_date = bt_cfg["end_date"]
+
+    print(Fore.CYAN + f"\nBuilding dataset for {len(symbols)} symbols ({start_date} → {end_date})…")
+    try:
+        summary = generate_training_dataset(symbols, start_date, end_date)
+        print(Fore.GREEN + f"\n✓ Generated {summary.rows:,} rows across {summary.symbols} symbols.")
+        print(Fore.GREEN + f"Saved to {summary.path}")
+    except Exception as e:
+        print(Fore.RED + f"\nDataset generation failed: {e}")
+    pause()
+
+
+def train_ranker(cfg: dict):
+    """Option I — train a lightweight ranking model from the latest dataset."""
+    from pathlib import Path
+    from src.datasets import generate_training_dataset
+    from src.models import train_latest_ranker
+
+    print(Fore.CYAN + "\nTraining lightweight ranking model from the newest dataset…")
+    try:
+        dataset_path = None
+        output_dir = Path("output")
+        if not any(output_dir.glob("training_dataset_*.csv")):
+            bt_cfg = cfg["backtest"]
+            print(Fore.YELLOW + "No training dataset found yet — generating one from the configured watchlist first…")
+            summary = generate_training_dataset(cfg.get("watchlist", []), bt_cfg["start_date"], bt_cfg["end_date"])
+            dataset_path = Path(summary.path)
+            print(Fore.GREEN + f"Generated {summary.rows:,} rows at {summary.path}")
+
+        model, metrics, source = train_latest_ranker(dataset_path=dataset_path)
+        print(Fore.GREEN + f"\n✓ Trained from {source}")
+        print(Fore.GREEN + f"Saved model to output/ranker_model.json")
+        print(Fore.WHITE + f"Samples: {metrics.samples:,}  Train: {metrics.train_samples:,}  Val: {metrics.val_samples:,}")
+        print(Fore.WHITE + f"Train accuracy: {metrics.train_accuracy:.1%}  Val accuracy: {metrics.val_accuracy:.1%}")
+        if metrics.train_auc is not None:
+            print(Fore.WHITE + f"Train AUC: {metrics.train_auc:.3f}")
+        if metrics.val_auc is not None:
+            print(Fore.WHITE + f"Val AUC: {metrics.val_auc:.3f}")
+        print(Fore.WHITE + f"Positive rate: train {metrics.train_positive_rate:.1%} / val {metrics.val_positive_rate:.1%}")
+
+        weights = list(zip(model.feature_columns, model.weights))
+        strongest = sorted(weights, key=lambda item: abs(item[1]), reverse=True)[:5]
+        print(Fore.CYAN + "\nStrongest learned signals:")
+        for name, weight in strongest:
+            direction = "bullish" if weight > 0 else "bearish"
+            print(f"  {name}: {weight:+.4f} ({direction})")
+    except Exception as e:
+        print(Fore.RED + f"\nTraining failed: {e}")
+    pause()
+
+
 # ── main loop ────────────────────────────────────────────────────────────────
 
 MENU = [
@@ -313,6 +380,8 @@ MENU = [
     ("E", "Place paper trade",              place_paper_trade),
     ("F", "AI plain-English analysis",      ai_analysis),
     ("G", "Export / view reports",          export_report),
+    ("H", "Generate training dataset",      generate_dataset),
+    ("I", "Train ranking model",            train_ranker),
     ("Q", "Quit",                           None),
 ]
 

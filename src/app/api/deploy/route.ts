@@ -12,6 +12,7 @@ import { accounts, trades } from "@/db/schema";
 import { BROKERAGE_ID } from "@/lib/accounts";
 import { calcBuyFees } from "@/lib/fees";
 import { fetchTopStocks } from "@/lib/fetchStocks";
+import { saveScanSignals } from "@/lib/roiTracker";
 import { callClaude, callOpenAI } from "@/lib/scanHelpers";
 import { calcShares } from "@/lib/shares";
 import { newId } from "@/lib/id";
@@ -32,6 +33,7 @@ export interface DeployPick {
   reasoning: string;
   invest: number;   // dollar amount to invest
   shares: number;   // calculated shares
+  signalId?: string | null;
 }
 
 export async function POST(req: NextRequest) {
@@ -63,9 +65,26 @@ export async function POST(req: NextRequest) {
       ? await callClaude(stocks)
       : await callOpenAI(stocks);
 
+    const normalized = ((raw.picks ?? []) as any[])
+      .map((p) => ({
+        symbol: String(p.symbol ?? ""),
+        name: String(p.name ?? p.symbol ?? ""),
+        direction: (p.direction as "long" | "short" | "neutral") ?? "long",
+        entryZoneLow: Number(p.entryZoneLow ?? 0),
+        entryZoneHigh: Number(p.entryZoneHigh ?? p.entryZoneLow ?? 0),
+        targetPrice: Number(p.targetPrice ?? 0),
+        stopLoss: Number(p.stopLoss ?? 0),
+        timeHorizon: String(p.timeHorizon ?? "unknown"),
+        confidence: Number(p.confidence ?? 0.5),
+        reasoning: String(p.reasoning ?? ""),
+        riskLevel: String(p.riskLevel ?? "moderate"),
+      }))
+      .filter((p) => p.symbol && p.entryZoneLow > 0);
+
+    const saved = await saveScanSignals(normalized, raw.model ?? model, raw.estimatedCostUsd ?? 0);
+
     // Filter to actionable picks
-    // eslint-disable-next-line @typescript-eslint/no-explicit-any
-    const qualifying = ((raw.picks ?? []) as any[]).filter((p) => {
+    const qualifying = saved.filter((p) => {
       if (!p.symbol || !p.entryZoneLow) return false;
       if (openTickers.has(String(p.symbol))) return false;
       if (Number(p.confidence ?? 0) < 0.60) return false;
@@ -98,6 +117,7 @@ export async function POST(req: NextRequest) {
         reasoning: String(p.reasoning ?? "").slice(0, 300),
         invest,
         shares: Math.round(shares * 10000) / 10000,
+        signalId: p.signalId ?? null,
       };
     });
 
@@ -164,6 +184,7 @@ export async function POST(req: NextRequest) {
           takeProfit: pick.targetPrice,
           fees,
           notes: `[DEPLOY] ${pick.reasoning}`,
+          aiSignalId: pick.signalId ?? null,
         });
         balance -= pick.invest;
         opened.push(pick.symbol);
