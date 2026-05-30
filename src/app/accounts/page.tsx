@@ -135,9 +135,13 @@ export default function AccountsPage() {
 
   const bank      = accounts.find((a) => a.type === "bank");
   const brokerage = accounts.find((a) => a.type === "brokerage");
-  const posValue  = positions.reduce((s, p) => s + p.totalValue, 0);
+  // Cost basis = what you actually paid — never inflates from quote discrepancies
+  const costBasis  = positions.reduce((s, p) => s + p.entryPrice * p.quantity, 0);
+  // Market value = current price × shares — used for per-position P&L display
+  const marketValue = positions.reduce((s, p) => s + p.totalValue, 0);
   const totalPnl  = positions.reduce((s, p) => s + p.pnl, 0);
-  const totalValue = (bank?.balance ?? 0) + (brokerage?.balance ?? 0) + posValue;
+  // Total = cash + cost basis; this always equals exactly what you deposited
+  const totalValue = (bank?.balance ?? 0) + (brokerage?.balance ?? 0) + costBasis;
 
   async function act(action: string, extra?: object) {
     setBusy(true); setErr(null); setOk(null);
@@ -156,12 +160,15 @@ export default function AccountsPage() {
 
       {/* ── Portfolio value ── */}
       <div className="pt-2">
-        <p className="text-xs text-muted-foreground uppercase tracking-widest font-semibold mb-1">Total Portfolio</p>
+        <p className="text-xs text-muted-foreground uppercase tracking-widest font-semibold mb-1">Total Invested</p>
         <p className="text-4xl font-black">{loading ? "—" : fmt(totalValue)}</p>
-        {positions.length > 0 && (
+        {positions.length > 0 && totalPnl !== 0 && (
           <p className={`text-sm font-semibold mt-1 ${totalPnl >= 0 ? "text-green-400" : "text-red-400"}`}>
-            {fmt(totalPnl, true)} ({pct(totalPnl / (totalValue - totalPnl || 1) * 100)}) · open positions
+            Unrealized P&L: {fmt(totalPnl, true)} · Market value: {fmt((bank?.balance ?? 0) + (brokerage?.balance ?? 0) + marketValue)}
           </p>
+        )}
+        {positions.length > 0 && totalPnl === 0 && (
+          <p className="text-xs text-muted-foreground mt-1">{positions.length} open position{positions.length !== 1 ? "s" : ""} · market closed</p>
         )}
       </div>
 
@@ -209,7 +216,7 @@ export default function AccountsPage() {
           <div className="rounded-2xl bg-card border border-border p-4">
             <p className="text-xs text-muted-foreground mb-1">📈 Brokerage</p>
             <p className="text-xl font-black">{fmt(brokerage?.balance ?? 0)}</p>
-            {posValue > 0 && <p className="text-xs text-muted-foreground mt-0.5">+{fmt(posValue)} in positions</p>}
+            {costBasis > 0 && <p className="text-xs text-muted-foreground mt-0.5">+{fmt(costBasis)} in positions</p>}
           </div>
         </div>
       </div>
