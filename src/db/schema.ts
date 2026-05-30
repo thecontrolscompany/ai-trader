@@ -68,6 +68,28 @@ export const trades = pgTable("trades", {
   aiSignalId: uuid("ai_signal_id").references(() => aiSignals.id),
 });
 
+export const autoTradeSettings = pgTable("auto_trade_settings", {
+  id: uuid("id").primaryKey().default(sql`gen_random_uuid()`),
+  enabled: text("enabled").notNull().default("false"),
+  model: text("model").notNull().default("openai"),
+  minConfidence: doublePrecision("min_confidence").notNull().default(0.75),
+  maxTradesPerDay: doublePrecision("max_trades_per_day").notNull().default(3),
+  maxPositionPct: doublePrecision("max_position_pct").notNull().default(0.05),
+  autoClose: text("auto_close").notNull().default("true"),
+  lastRunAt: timestamp("last_run_at"),
+  lastRunSummary: text("last_run_summary"),
+  updatedAt: timestamp("updated_at").notNull().defaultNow(),
+});
+
+export const autoTradeLog = pgTable("auto_trade_log", {
+  id: uuid("id").primaryKey().default(sql`gen_random_uuid()`),
+  action: text("action").notNull(),  // "opened" | "closed" | "skipped" | "error"
+  ticker: text("ticker"),
+  tradeId: uuid("trade_id").references(() => trades.id),
+  reason: text("reason"),
+  createdAt: timestamp("created_at").notNull().defaultNow(),
+});
+
 export type Trade = typeof trades.$inferSelect;
 export type NewTrade = typeof trades.$inferInsert;
 export type AISignal = typeof aiSignals.$inferSelect;

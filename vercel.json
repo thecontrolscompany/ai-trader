@@ -1,7 +1,13 @@
 {
   "functions": {
-    "src/app/api/scan/route.ts": {
-      "maxDuration": 60
+    "src/app/api/scan/route.ts": { "maxDuration": 60 },
+    "src/app/api/auto-trade/run/route.ts": { "maxDuration": 60 },
+    "src/app/api/cron/auto-trade/route.ts": { "maxDuration": 60 }
+  },
+  "crons": [
+    {
+      "path": "/api/cron/auto-trade",
+      "schedule": "30 14 * * 1-5"
     }
-  }
+  ]
 }

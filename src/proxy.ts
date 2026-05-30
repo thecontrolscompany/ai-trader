@@ -2,7 +2,7 @@ import { auth } from "@/auth";
 import { NextResponse } from "next/server";
 
 // Only these paths require login — everything else is public
-const PROTECTED = ["/scan", "/trades", "/accounts", "/dashboard", "/api/scan", "/api/trades", "/api/accounts"];
+const PROTECTED = ["/scan", "/trades", "/accounts", "/dashboard", "/auto-trade", "/api/scan", "/api/trades", "/api/accounts", "/api/auto-trade"];
 
 export default auth((req) => {
   const { pathname } = req.nextUrl;

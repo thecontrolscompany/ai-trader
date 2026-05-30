@@ -13,11 +13,11 @@ const publicLinks = [
 
 // Only shown when logged in
 const privateLinks = [
-  { href: "/scan",        label: "AI Scan" },
-  { href: "/accounts",    label: "Accounts" },
-  { href: "/dashboard",   label: "Portfolio" },
-  { href: "/trades",      label: "My Trades" },
-  { href: "/trades/new",  label: "+ New Trade" },
+  { href: "/scan",         label: "AI Scan" },
+  { href: "/auto-trade",   label: "Auto Trade" },
+  { href: "/accounts",     label: "Portfolio" },
+  { href: "/trades",       label: "My Trades" },
+  { href: "/trades/new",   label: "+ New Trade" },
 ];
 
 interface Props {
