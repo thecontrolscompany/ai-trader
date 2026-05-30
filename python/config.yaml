@@ -1,0 +1,43 @@
+# ============================================================
+# Tim & Shane Stocks — AI Trader CLI Configuration
+# ============================================================
+# WARNING: This tool is for PAPER TRADING and research only.
+# Nothing here constitutes financial advice.
+# All trades are simulated. No real money is at risk.
+# ============================================================
+
+watchlist:
+  - SPY
+  - QQQ
+  - AAPL
+  - MSFT
+  - NVDA
+
+broker: alpaca          # alpaca | ibkr | tradier
+paper_trading: true     # MUST remain true — never set to false
+
+risk:
+  max_position_pct: 0.05      # Max 5% of portfolio in any one position
+  max_daily_loss_pct: 0.02    # Stop trading if down 2% on the day
+  stop_loss_pct: 0.05         # 5% stop loss on every trade
+  min_confidence: 0.60        # AI confidence must be >= 60% to flag a trade
+
+strategies:
+  sma_crossover:
+    short_window: 20
+    long_window: 50
+  rsi:
+    period: 14
+    oversold: 30
+    overbought: 70
+
+backtest:
+  start_date: "2023-01-01"
+  end_date: "2024-12-31"
+  initial_capital: 100000.00
+
+ai:
+  provider: claude            # claude | openai
+  model_claude: claude-sonnet-4-6
+  model_openai: gpt-4o
+  max_news_items: 5
