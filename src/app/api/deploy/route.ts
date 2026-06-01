@@ -6,6 +6,7 @@ import { calcBuyFees } from "@/lib/fees";
 import { fetchTopStocks } from "@/lib/fetchStocks";
 import { callClaude, callOpenAI } from "@/lib/scanHelpers";
 import { calcShares } from "@/lib/shares";
+import { getQuote } from "@/lib/marketProvider";
 import { newId } from "@/lib/id";
 import { eq } from "drizzle-orm";
 import { NextRequest, NextResponse } from "next/server";
@@ -62,7 +63,7 @@ export async function POST(req: NextRequest) {
         stopLoss: Number(p.stopLoss ?? entryPrice * 0.95),
         confidence: Number(p.confidence ?? 0.7), riskLevel: String(p.riskLevel ?? "moderate"),
         reasoning: String(p.reasoning ?? "").slice(0, 300),
-        invest, shares: Math.round(calcShares(invest, entryPrice) * 10000) / 10000,
+        invest, shares: calcShares(invest, entryPrice),
         signalId: p.signalId ?? null,
       };
     });
@@ -78,28 +79,31 @@ export async function POST(req: NextRequest) {
     let balance = brokerage?.balance ?? 0;
     const opened: string[] = []; const errors: string[] = [];
 
+    // Fetch live prices via Tradier for all picks in parallel
     const priceMap: Record<string, number> = {};
     await Promise.all(picks.map(async (p) => {
       try {
-        const j = await (await fetch(`https://query1.finance.yahoo.com/v7/finance/quote?symbols=${p.symbol}`, { headers: { "User-Agent": "Mozilla/5.0" } })).json();
-        const price = j?.quoteResponse?.result?.[0]?.regularMarketPrice;
-        if (price) priceMap[p.symbol] = Number(price);
-      } catch { /* fallback */ }
+        const q = await getQuote(p.symbol);
+        if (q?.price) priceMap[p.symbol] = q.price;
+      } catch { /* fallback to preview entry price */ }
     }));
 
     for (const pick of picks) {
-      if (balance < pick.invest) { errors.push(`${pick.symbol}: insufficient funds`); continue; }
       try {
         const actualEntry = priceMap[pick.symbol] ?? pick.entryPrice;
+        const qty = calcShares(pick.invest, actualEntry);
+        if (qty < 1) { errors.push(`${pick.symbol}: price too high for available budget`); continue; }
+        const actualCost = qty * actualEntry + calcBuyFees();
+        if (balance < actualCost) { errors.push(`${pick.symbol}: insufficient funds`); continue; }
         await db.insert(trades).values({
           id: newId(), portfolioId, ticker: pick.symbol, assetClass: "stock",
           direction: pick.direction, status: "open", entryPrice: actualEntry,
-          quantity: calcShares(pick.invest, actualEntry),
+          quantity: qty,
           stopLoss: pick.stopLoss, takeProfit: pick.targetPrice,
           fees: calcBuyFees(), notes: `[DEPLOY] ${pick.reasoning}`,
           aiSignalId: pick.signalId ?? null,
         });
-        balance -= pick.invest;
+        balance -= actualCost;
         opened.push(pick.symbol);
       } catch (e) { errors.push(`${pick.symbol}: ${e}`); }
     }
