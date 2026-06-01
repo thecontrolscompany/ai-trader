@@ -3,7 +3,7 @@ import { NextResponse } from "next/server";
 
 // Only these paths require login — everything else is public.
 // Leave /api/cron public so Vercel cron can reach the CRON_SECRET check in the route handler.
-const PROTECTED = ["/scan", "/trades", "/accounts", "/dashboard", "/auto-trade", "/activity", "/admin", "/home", "/api/scan", "/api/trades", "/api/accounts", "/api/auto-trade", "/api/deploy", "/api/portfolios", "/api/admin"];
+const PROTECTED = ["/scan", "/trades", "/accounts", "/dashboard", "/auto-trade", "/activity", "/admin", "/home", "/portfolios", "/api/scan", "/api/trades", "/api/accounts", "/api/auto-trade", "/api/deploy", "/api/portfolios", "/api/admin"];
 
 export default auth((req) => {
   const { pathname } = req.nextUrl;

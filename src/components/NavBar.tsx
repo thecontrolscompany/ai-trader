@@ -25,7 +25,12 @@ const adminLinks = [
   { href: "/trades/new",   label: "+ New Trade" },
 ];
 
-// Buried — admin only
+// Admin-only links — shown in nav
+const adminExtraLinks = [
+  { href: "/portfolios",   label: "Compare" },
+];
+
+// Buried — admin only, in hamburger/desktop fine print
 const researchLinks = [
   { href: "/activity",     label: "Activity Log" },
   { href: "/admin/models", label: "AI Models" },
@@ -51,7 +56,7 @@ export default function NavBar({ isLoggedIn, isAdmin = false, userName, userImag
   }
 
   const visibleLinks = isLoggedIn
-    ? [...publicLinks, ...userLinks, ...(isAdmin ? adminLinks : [])]
+    ? [...publicLinks, ...userLinks, ...(isAdmin ? [...adminLinks, ...adminExtraLinks] : [])]
     : publicLinks;
   const firstName = userName?.split(" ")[0] ?? null;
 

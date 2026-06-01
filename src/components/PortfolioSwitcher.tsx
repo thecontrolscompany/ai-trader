@@ -1,14 +1,11 @@
 "use client";
 
 import { useEffect, useRef, useState } from "react";
-import { useRouter } from "next/navigation";
-
 interface Portfolio { id: string; name: string; mode: string; broker: string; }
 
 interface Props { activeId: string | null; }
 
 export default function PortfolioSwitcher({ activeId }: Props) {
-  const router = useRouter();
   const [portfolios, setPortfolios] = useState<Portfolio[]>([]);
   const [open, setOpen] = useState(false);
   const [creating, setCreating] = useState(false);
@@ -31,9 +28,8 @@ export default function PortfolioSwitcher({ activeId }: Props) {
   async function switchTo(id: string) {
     await fetch("/api/portfolios/switch", { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ portfolioId: id }) });
     setOpen(false);
-    // Use replace with a cache-busting param so client components fully remount
-    router.replace(`?p=${id.slice(0, 8)}`);
-    router.refresh();
+    // Full navigation ensures cookie is read fresh and all DB queries are sequential
+    window.location.href = "/accounts";
   }
 
   async function createPortfolio() {

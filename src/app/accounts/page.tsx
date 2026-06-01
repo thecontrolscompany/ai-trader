@@ -1,7 +1,6 @@
 "use client";
 
 import { Suspense, useEffect, useState, useCallback } from "react";
-import { useSearchParams } from "next/navigation";
 import type { DeployPick } from "@/app/api/deploy/route";
 
 interface Account { id: string; name: string; type: "bank" | "brokerage"; balance: number; }
@@ -28,8 +27,6 @@ function pct(n: number) {
 
 // Inner component that uses useSearchParams — must be inside <Suspense>
 function AccountsContent() {
-  const searchParams = useSearchParams();
-  const portfolioKey = searchParams.get("p") ?? "default";
 
   const [accounts, setAccounts]   = useState<Account[]>([]);
   const [transfers, setTransfers] = useState<Transfer[]>([]);
@@ -150,15 +147,7 @@ function AccountsContent() {
     }
   }, []);
 
-  // Re-fetch whenever portfolioKey changes (portfolio switch sets ?p=ID)
-  useEffect(() => {
-    setAccounts([]);
-    setTransfers([]);
-    setPositions([]);
-    setLoading(true);
-    load();
-    loadPositions();
-  }, [load, loadPositions, portfolioKey]);
+  useEffect(() => { load(); loadPositions(); }, [load, loadPositions]);
 
   const bank      = accounts.find((a) => a.type === "bank");
   const brokerage = accounts.find((a) => a.type === "brokerage");
