@@ -1,13 +1,17 @@
-import { runAutoTrade } from "@/lib/autoTradeEngine";
+import { runAutoTradeForUser } from "@/lib/autoTradeEngine";
+import { getSessionUserId } from "@/lib/session";
 import { NextResponse } from "next/server";
 
-export const maxDuration = 60;
+export const maxDuration = 300;
 
 export async function POST() {
+  const result = await getSessionUserId();
+  if ("error" in result) return result.error;
+  const { userId } = result;
+
   try {
-    // force=true bypasses the market hours check for manual runs
-    const result = await runAutoTrade(true);
-    return NextResponse.json(result);
+    const runResult = await runAutoTradeForUser(userId, true);
+    return NextResponse.json(runResult);
   } catch (e) {
     return NextResponse.json({ error: String(e) }, { status: 500 });
   }

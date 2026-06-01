@@ -1,31 +1,36 @@
 import { db } from "@/db";
 import { autoTradeLog, autoTradeSettings } from "@/db/schema";
-import { eq, desc } from "drizzle-orm";
+import { getSessionUserId } from "@/lib/session";
+import { eq, and, desc } from "drizzle-orm";
+import { newId } from "@/lib/id";
 import { NextRequest, NextResponse } from "next/server";
 
-const SETTINGS_ID = "00000000-0000-0000-0000-000000000010";
-
-async function getOrCreateSettings() {
+async function getOrCreate(userId: string) {
   const [existing] = await db.select().from(autoTradeSettings)
-    .where(eq(autoTradeSettings.id, SETTINGS_ID)).limit(1);
+    .where(eq(autoTradeSettings.userId, userId)).limit(1);
   if (existing) return existing;
-
-  // Row missing — create it with defaults
-  const [created] = await db.insert(autoTradeSettings)
-    .values({ id: SETTINGS_ID })
-    .returning();
+  const [created] = await db.insert(autoTradeSettings).values({ id: newId(), userId }).returning();
   return created;
 }
 
 export async function GET() {
-  const settings = await getOrCreateSettings();
+  const result = await getSessionUserId();
+  if ("error" in result) return result.error;
+  const { userId } = result;
+
+  const settings = await getOrCreate(userId);
   const log = await db.select().from(autoTradeLog)
+    .where(eq(autoTradeLog.userId, userId))
     .orderBy(desc(autoTradeLog.createdAt)).limit(50);
   return NextResponse.json({ settings, log });
 }
 
 export async function PATCH(req: NextRequest) {
-  await getOrCreateSettings(); // ensure row exists
+  const result = await getSessionUserId();
+  if ("error" in result) return result.error;
+  const { userId } = result;
+
+  await getOrCreate(userId);
   const body = await req.json();
   const updates: Record<string, unknown> = { updatedAt: new Date() };
 
@@ -39,6 +44,6 @@ export async function PATCH(req: NextRequest) {
   if (body.maxPositionPct !== undefined)  updates.maxPositionPct  = Number(body.maxPositionPct);
 
   const [updated] = await db.update(autoTradeSettings)
-    .set(updates).where(eq(autoTradeSettings.id, SETTINGS_ID)).returning();
+    .set(updates).where(eq(autoTradeSettings.userId, userId)).returning();
   return NextResponse.json(updated);
 }

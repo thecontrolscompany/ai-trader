@@ -1,5 +1,6 @@
 import { sql } from "drizzle-orm";
 import {
+  boolean,
   doublePrecision,
   pgEnum,
   pgTable,
@@ -34,8 +35,10 @@ export const aiSignals = pgTable("ai_signals", {
   createdAt: timestamp("created_at").notNull().defaultNow(),
 });
 
+// Each user gets their own bank + brokerage account row
 export const accounts = pgTable("accounts", {
   id: uuid("id").primaryKey().default(sql`gen_random_uuid()`),
+  userId: text("user_id").notNull(),
   name: text("name").notNull(),
   type: accountTypeEnum("type").notNull(),
   balance: doublePrecision("balance").notNull().default(0),
@@ -44,6 +47,7 @@ export const accounts = pgTable("accounts", {
 
 export const transfers = pgTable("transfers", {
   id: uuid("id").primaryKey().default(sql`gen_random_uuid()`),
+  userId: text("user_id").notNull(),
   fromAccountId: uuid("from_account_id").notNull().references(() => accounts.id),
   toAccountId: uuid("to_account_id").notNull().references(() => accounts.id),
   amount: doublePrecision("amount").notNull(),
@@ -53,6 +57,7 @@ export const transfers = pgTable("transfers", {
 
 export const trades = pgTable("trades", {
   id: uuid("id").primaryKey().default(sql`gen_random_uuid()`),
+  userId: text("user_id").notNull(),
   ticker: text("ticker").notNull(),
   assetClass: assetClassEnum("asset_class").notNull().default("stock"),
   direction: tradeDirEnum("direction").notNull(),
@@ -69,8 +74,10 @@ export const trades = pgTable("trades", {
   aiSignalId: uuid("ai_signal_id").references(() => aiSignals.id),
 });
 
+// Per-user auto-trade settings
 export const autoTradeSettings = pgTable("auto_trade_settings", {
   id: uuid("id").primaryKey().default(sql`gen_random_uuid()`),
+  userId: text("user_id").notNull(),
   enabled: text("enabled").notNull().default("false"),
   model: text("model").notNull().default("openai"),
   minConfidence: doublePrecision("min_confidence").notNull().default(0.75),
@@ -86,7 +93,8 @@ export const autoTradeSettings = pgTable("auto_trade_settings", {
 
 export const autoTradeLog = pgTable("auto_trade_log", {
   id: uuid("id").primaryKey().default(sql`gen_random_uuid()`),
-  action: text("action").notNull(),  // "opened" | "closed" | "skipped" | "error"
+  userId: text("user_id"),
+  action: text("action").notNull(),
   ticker: text("ticker"),
   tradeId: uuid("trade_id").references(() => trades.id),
   reason: text("reason"),

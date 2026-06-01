@@ -15,7 +15,7 @@
 
 import { db } from "@/db";
 import { accounts, autoTradeLog, autoTradeSettings, trades } from "@/db/schema";
-import { BROKERAGE_ID } from "@/lib/accounts";
+import { getBrokerageId } from "@/lib/accounts";
 import { getEasternTime, isMarketHours, isWithinRunWindow } from "@/lib/autoTradeSchedule";
 import { calcSellFees } from "@/lib/fees";
 import { newId } from "@/lib/id";
@@ -23,8 +23,6 @@ import { fetchTopStocks } from "@/lib/fetchStocks";
 import { calcShares } from "@/lib/shares";
 import { saveScanSignals } from "@/lib/roiTracker";
 import { eq, and, gte, sql } from "drizzle-orm";
-
-const SETTINGS_ID = "00000000-0000-0000-0000-000000000010";
 
 export interface AutoTradeResult {
   opened: string[];
@@ -34,42 +32,51 @@ export interface AutoTradeResult {
   summary: string;
 }
 
-async function log(action: string, ticker?: string, tradeId?: string, reason?: string) {
+async function log(action: string, userId: string, ticker?: string, tradeId?: string, reason?: string) {
   await db.insert(autoTradeLog).values({
-    id: newId(), action,
+    id: newId(), action, userId,
     ticker: ticker ?? null,
     tradeId: tradeId ?? null,
     reason: reason ?? null,
   });
 }
 
-async function getDailyTradeCount(): Promise<number> {
+async function getDailyTradeCount(userId: string): Promise<number> {
   const today = new Date();
   today.setHours(0, 0, 0, 0);
   const rows = await db.select({ count: sql<number>`count(*)` })
     .from(autoTradeLog)
-    .where(and(eq(autoTradeLog.action, "opened"), gte(autoTradeLog.createdAt, today)));
+    .where(and(eq(autoTradeLog.userId, userId), eq(autoTradeLog.action, "opened"), gte(autoTradeLog.createdAt, today)));
   return Number(rows[0]?.count ?? 0);
 }
 
-async function getAccountBalance(accountId: string): Promise<number> {
-  const [row] = await db.select().from(accounts).where(eq(accounts.id, accountId)).limit(1);
-  return row?.balance ?? 0;
-}
-
-async function getOrCreateSettingsRow() {
-  let [settings] = await db.select().from(autoTradeSettings).where(eq(autoTradeSettings.id, SETTINGS_ID)).limit(1);
+async function getOrCreateSettings(userId: string) {
+  let [settings] = await db.select().from(autoTradeSettings)
+    .where(eq(autoTradeSettings.userId, userId)).limit(1);
   if (!settings) {
-    [settings] = await db.insert(autoTradeSettings).values({ id: SETTINGS_ID }).returning();
+    [settings] = await db.insert(autoTradeSettings).values({ id: newId(), userId }).returning();
   }
   return settings;
 }
 
-export async function runAutoTrade(force = false): Promise<AutoTradeResult> {
+/** Run auto-trade for all users who have it enabled (used by cron). */
+export async function runAutoTradeForAllUsers(): Promise<Record<string, AutoTradeResult>> {
+  const et = getEasternTime();
+  const allSettings = await db.select().from(autoTradeSettings)
+    .where(eq(autoTradeSettings.enabled, "true"));
+
+  const results: Record<string, AutoTradeResult> = {};
+  for (const s of allSettings) {
+    if (!isWithinRunWindow(s.scanFrequency ?? "4x", et)) continue;
+    results[s.userId] = await runAutoTradeForUser(s.userId, false);
+  }
+  return results;
+}
+
+export async function runAutoTradeForUser(userId: string, force = false): Promise<AutoTradeResult> {
   const result: AutoTradeResult = { opened: [], closed: [], skipped: [], errors: [], summary: "" };
 
-  // Load settings — create defaults if row is missing
-  const settings = await getOrCreateSettingsRow();
+  const settings = await getOrCreateSettings(userId);
   if (!settings || settings.enabled !== "true") {
     result.summary = "Auto-trading is disabled.";
     return result;
@@ -84,16 +91,16 @@ export async function runAutoTrade(force = false): Promise<AutoTradeResult> {
 
   if (!force && !isMarketHours(et)) {
     result.summary = "Market is closed — no trades placed.";
-    await log("skipped", undefined, undefined, "Market closed");
+    await log("skipped", userId, undefined, undefined, "Market closed");
     return result;
   }
 
-  const dailyCount = await getDailyTradeCount();
+  const dailyCount = await getDailyTradeCount(userId);
   const maxDaily   = Math.floor(settings.maxTradesPerDay);
 
   // ── Auto-close: check stop loss / take profit on open positions ─────────
   if (settings.autoClose === "true") {
-    const openTrades = await db.select().from(trades).where(eq(trades.status, "open"));
+    const openTrades = await db.select().from(trades).where(and(eq(trades.userId, userId), eq(trades.status, "open")));
     for (const trade of openTrades) {
       try {
         const res = await fetch(`https://query1.finance.yahoo.com/v7/finance/quote?symbols=${trade.ticker}`, {
@@ -113,7 +120,8 @@ export async function runAutoTrade(force = false): Promise<AutoTradeResult> {
         if (shouldClose) {
           const sellFees   = calcSellFees(price, trade.quantity);
           const netProceeds = price * trade.quantity - sellFees;
-          const [brokerage] = await db.select().from(accounts).where(eq(accounts.id, BROKERAGE_ID)).limit(1);
+          const brokerageId = await getBrokerageId(userId);
+          const [brokerage] = await db.select().from(accounts).where(eq(accounts.id, brokerageId)).limit(1);
           const pnl = netProceeds - trade.entryPrice * trade.quantity;
 
           await Promise.all([
@@ -121,10 +129,10 @@ export async function runAutoTrade(force = false): Promise<AutoTradeResult> {
               status: "closed", exitPrice: price,
               closedAt: new Date(), fees: (trade.fees ?? 0) + sellFees,
             }).where(eq(trades.id, trade.id)),
-            db.update(accounts).set({ balance: brokerage.balance + netProceeds }).where(eq(accounts.id, BROKERAGE_ID)),
+            db.update(accounts).set({ balance: brokerage.balance + netProceeds }).where(eq(accounts.id, brokerageId)),
           ]);
 
-          await log("closed", trade.ticker, trade.id, `${closeReason} · P&L: ${pnl >= 0 ? "+" : ""}$${pnl.toFixed(2)}`);
+          await log("closed", userId, trade.ticker, trade.id, `${closeReason} · P&L: ${pnl >= 0 ? "+" : ""}$${pnl.toFixed(2)}`);
           result.closed.push(`${trade.ticker} (${closeReason})`);
         }
       } catch (e) {
@@ -173,10 +181,12 @@ export async function runAutoTrade(force = false): Promise<AutoTradeResult> {
     picks?.estimatedCostUsd ?? 0
   );
 
+  const brokerageId = await getBrokerageId(userId);
   const openTickers = new Set(
-    (await db.select().from(trades).where(eq(trades.status, "open"))).map((t) => t.ticker)
+    (await db.select().from(trades).where(and(eq(trades.userId, userId), eq(trades.status, "open")))).map((t) => t.ticker)
   );
-  const brokerBalance = await getAccountBalance(BROKERAGE_ID);
+  const [brokerRow] = await db.select().from(accounts).where(eq(accounts.id, brokerageId)).limit(1);
+  const brokerBalance = brokerRow?.balance ?? 0;
   let remaining = maxDaily - dailyCount;
   let availableBalance = brokerBalance;
 
@@ -219,7 +229,7 @@ export async function runAutoTrade(force = false): Promise<AutoTradeResult> {
     try {
       const tradeId = newId();
       await db.insert(trades).values({
-        id: tradeId, ticker: String(pick.symbol), assetClass: "stock",
+        id: tradeId, userId, ticker: String(pick.symbol), assetClass: "stock",
         direction: pick.direction === "short" ? "short" : "long",
         status: "open", entryPrice, quantity: qty,
         stopLoss: pick.stopLoss ?? null, takeProfit: pick.targetPrice ?? null,
@@ -228,8 +238,8 @@ export async function runAutoTrade(force = false): Promise<AutoTradeResult> {
       });
       availableBalance -= invest;
       remainingSlots = Math.max(1, remainingSlots - 1);
-      await db.update(accounts).set({ balance: availableBalance }).where(eq(accounts.id, BROKERAGE_ID));
-      await log("opened", pick.symbol, tradeId,
+      await db.update(accounts).set({ balance: availableBalance }).where(eq(accounts.id, brokerageId));
+      await log("opened", userId, pick.symbol, tradeId,
         `Confidence ${(Number(pick.confidence) * 100).toFixed(0)}% · ${pick.riskLevel ?? "moderate"} risk · invested $${invest.toFixed(2)}`);
       openTickers.add(pick.symbol);
       result.opened.push(`${pick.symbol} — ${qty.toFixed(4)} shares @ $${entryPrice.toFixed(2)} ($${invest.toFixed(2)})`);
@@ -250,7 +260,7 @@ export async function runAutoTrade(force = false): Promise<AutoTradeResult> {
   // Save summary to settings
   await db.update(autoTradeSettings).set({
     lastRunAt: new Date(), lastRunSummary: result.summary,
-  }).where(eq(autoTradeSettings.id, SETTINGS_ID));
+  }).where(eq(autoTradeSettings.userId, userId));
 
   return result;
 }

@@ -1,29 +1,23 @@
 import { db } from "@/db";
 import { accounts, aiSignals, autoTradeLog, autoTradeSettings, trades, transfers } from "@/db/schema";
+import { getSessionUserId } from "@/lib/session";
 import { eq } from "drizzle-orm";
 import { NextResponse } from "next/server";
 
-// Paper trading reset — clears all simulated trades, history, and balances.
-// Has no effect on real money. This is purely a paper trading tool.
 export async function POST() {
-  try {
-    // Delete in FK-safe order
-    await db.delete(autoTradeLog);
-    await db.delete(transfers);
-    await db.delete(trades);
-    await db.delete(aiSignals);
+  const result = await getSessionUserId();
+  if ("error" in result) return result.error;
+  const { userId } = result;
 
-    // Zero out balances
-    await db.update(accounts).set({ balance: 0 });
+  // Delete in FK-safe order, scoped to this user only
+  await db.delete(autoTradeLog).where(eq(autoTradeLog.userId, userId));
+  await db.delete(transfers).where(eq(transfers.userId, userId));
+  await db.delete(trades).where(eq(trades.userId, userId));
+  // Keep ai_signals — they're shared reference data, not user-specific
 
-    // Clear auto-trade last run info
-    await db.update(autoTradeSettings).set({
-      lastRunAt: null,
-      lastRunSummary: null,
-    });
+  await db.update(accounts).set({ balance: 0 }).where(eq(accounts.userId, userId));
+  await db.update(autoTradeSettings).set({ lastRunAt: null, lastRunSummary: null })
+    .where(eq(autoTradeSettings.userId, userId));
 
-    return NextResponse.json({ success: true });
-  } catch (e) {
-    return NextResponse.json({ error: String(e) }, { status: 500 });
-  }
+  return NextResponse.json({ success: true });
 }
