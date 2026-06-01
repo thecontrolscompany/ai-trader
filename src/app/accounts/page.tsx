@@ -151,13 +151,12 @@ function AccountsContent() {
 
   const bank      = accounts.find((a) => a.type === "bank");
   const brokerage = accounts.find((a) => a.type === "brokerage");
-  // Cost basis = what you actually paid — never inflates from quote discrepancies
-  const costBasis  = positions.reduce((s, p) => s + p.entryPrice * p.quantity, 0);
-  // Market value = current price × shares — used for per-position P&L display
+  const costBasis   = positions.reduce((s, p) => s + p.entryPrice * p.quantity, 0);
   const marketValue = positions.reduce((s, p) => s + p.totalValue, 0);
-  const totalPnl  = positions.reduce((s, p) => s + p.pnl, 0);
-  // Total = cash + cost basis; this always equals exactly what you deposited
-  const totalValue = (bank?.balance ?? 0) + (brokerage?.balance ?? 0) + costBasis;
+  const totalPnl    = positions.reduce((s, p) => s + p.pnl, 0);
+  const cash        = (bank?.balance ?? 0) + (brokerage?.balance ?? 0);
+  // Portfolio value = cash + current market value of open positions
+  const totalValue  = cash + (positions.length > 0 ? marketValue : 0);
 
   async function act(action: string, extra?: object) {
     const parsed = parseFloat(amount);
@@ -194,11 +193,11 @@ function AccountsContent() {
 
       {/* ── Portfolio value ── */}
       <div className="pt-2">
-        <p className="text-xs text-muted-foreground uppercase tracking-widest font-semibold mb-1">Total Invested</p>
+        <p className="text-xs text-muted-foreground uppercase tracking-widest font-semibold mb-1">Portfolio Value</p>
         <p className="text-4xl font-black">{loading ? "—" : fmt(totalValue)}</p>
         {positions.length > 0 && Math.abs(totalPnl) >= 0.01 && (
           <p className={`text-sm font-semibold mt-1 ${totalPnl >= 0 ? "text-green-400" : "text-red-400"}`}>
-            {fmt(totalPnl, true)} unrealized · market value {fmt((bank?.balance ?? 0) + (brokerage?.balance ?? 0) + marketValue)}
+            {fmt(totalPnl, true)} unrealized · cost basis {fmt(cash + costBasis)}
           </p>
         )}
         {positions.length > 0 && Math.abs(totalPnl) < 0.01 && (
@@ -250,7 +249,7 @@ function AccountsContent() {
           <div className="rounded-2xl bg-card border border-border p-4">
             <p className="text-xs text-muted-foreground mb-1">📈 Brokerage</p>
             <p className="text-xl font-black">{fmt(brokerage?.balance ?? 0)}</p>
-            {costBasis > 0 && <p className="text-xs text-muted-foreground mt-0.5">+{fmt(costBasis)} in positions</p>}
+            {marketValue > 0 && <p className="text-xs text-muted-foreground mt-0.5">+{fmt(marketValue)} in positions</p>}
           </div>
         </div>
       </div>

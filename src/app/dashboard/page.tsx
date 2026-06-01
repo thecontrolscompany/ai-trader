@@ -1,7 +1,8 @@
 import { db } from "@/db";
 import { trades } from "@/db/schema";
-import { calcRealizedPnl } from "@/lib/pnl";
+import { calcRealizedPnl, calcUnrealizedPnl, formatPnl, pnlColor } from "@/lib/pnl";
 import { getAiRoiSummary } from "@/lib/roiTracker";
+import { getQuotes } from "@/lib/marketProvider";
 import type { Trade } from "@/lib/types";
 import { Badge } from "@/components/ui/badge";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
@@ -31,6 +32,8 @@ export default async function DashboardPage() {
   const s = buildSummary(rows);
   const roi = await getAiRoiSummary();
   const openTrades = rows.filter((t) => t.status === "open").slice(0, 10);
+  const openTickers = [...new Set(openTrades.map((t) => t.ticker))];
+  const quotes = await getQuotes(openTickers);
 
   return (
     <div className="space-y-8">
@@ -228,6 +231,8 @@ export default async function DashboardPage() {
                   <th className="px-4 py-3 text-left">Ticker</th>
                   <th className="px-4 py-3 text-left">Direction</th>
                   <th className="px-4 py-3 text-right">Entry</th>
+                  <th className="px-4 py-3 text-right">Current</th>
+                  <th className="px-4 py-3 text-right">Unrealized P&L</th>
                   <th className="px-4 py-3 text-right">Qty</th>
                   <th className="px-4 py-3 text-right">Target</th>
                   <th className="px-4 py-3 text-right">Stop</th>
@@ -235,7 +240,10 @@ export default async function DashboardPage() {
                 </tr>
               </thead>
               <tbody className="divide-y">
-                {openTrades.map((t) => (
+                {openTrades.map((t) => {
+                  const quote = quotes.get(t.ticker);
+                  const unrealized = quote != null ? calcUnrealizedPnl(t, quote.price) : null;
+                  return (
                   <tr key={t.id} className="hover:bg-muted/30 transition-colors">
                     <td className="px-4 py-3 font-semibold">
                       <Link href={`/trades/${t.id}`}>{t.ticker}</Link>
@@ -249,6 +257,12 @@ export default async function DashboardPage() {
                       </Badge>
                     </td>
                     <td className="px-4 py-3 text-right">${t.entryPrice.toFixed(2)}</td>
+                    <td className="px-4 py-3 text-right">
+                      {quote != null ? `$${quote.price.toFixed(2)}` : "—"}
+                    </td>
+                    <td className={`px-4 py-3 text-right font-medium ${unrealized != null ? pnlColor(unrealized) : ""}`}>
+                      {unrealized != null ? formatPnl(unrealized) : "—"}
+                    </td>
                     <td className="px-4 py-3 text-right">{t.quantity}</td>
                     <td className="px-4 py-3 text-right text-green-400">
                       {t.takeProfit != null ? `$${t.takeProfit.toFixed(2)}` : "—"}
@@ -260,7 +274,8 @@ export default async function DashboardPage() {
                       {new Date(t.openedAt).toLocaleDateString()}
                     </td>
                   </tr>
-                ))}
+                  );
+                })}
               </tbody>
             </table>
           </div>

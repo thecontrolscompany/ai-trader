@@ -1,6 +1,7 @@
 import { db } from "@/db";
 import { accounts, autoTradeSettings, aiModels, trades, portfolios } from "@/db/schema";
 import { getActivePortfolio } from "@/lib/portfolio";
+import { getQuotes } from "@/lib/marketProvider";
 import { auth } from "@/auth";
 import { eq, inArray } from "drizzle-orm";
 import { redirect } from "next/navigation";
@@ -33,6 +34,10 @@ export default async function PortfoliosPage() {
     db.select().from(aiModels),
   ]);
 
+  const openTrades = allTrades.filter(t => t.status === "open");
+  const uniqueTickers = [...new Set(openTrades.map(t => t.ticker))];
+  const quotes = await getQuotes(uniqueTickers);
+
   const cards = userPortfolios.map(p => {
     const pAccounts = allAccounts.filter(a => a.portfolioId === p.id);
     const pTrades   = allTrades.filter(t => t.portfolioId === p.id);
@@ -41,7 +46,12 @@ export default async function PortfoliosPage() {
     const cash      = pAccounts.reduce((s, a) => s + a.balance, 0);
     const open      = pTrades.filter(t => t.status === "open");
     const closed    = pTrades.filter(t => t.status === "closed");
-    const invested  = open.reduce((s, t) => s + t.entryPrice * t.quantity, 0);
+    const costBasis = open.reduce((s, t) => s + t.entryPrice * t.quantity, 0);
+    const invested  = open.reduce((s, t) => {
+      const price = quotes.get(t.ticker)?.price ?? t.entryPrice;
+      return s + price * t.quantity;
+    }, 0);
+    const unrealizedPnl = invested - costBasis;
     const realizedPnl = closed.reduce((s, t) => {
       if (t.exitPrice == null) return s;
       const diff = (t.exitPrice - t.entryPrice) * t.quantity;
@@ -66,7 +76,8 @@ export default async function PortfoliosPage() {
       id: p.id, name: p.name, mode: p.mode, broker: p.broker,
       isActive: p.id === activePortfolio?.id,
       cash, invested, totalValue: cash + invested,
-      realizedPnl, openTrades: open.length, closedTrades: closed.length, wins,
+      unrealizedPnl, realizedPnl,
+      openTrades: open.length, closedTrades: closed.length, wins,
       modelName, modelStatus,
     };
   }).sort((a, b) => {
@@ -128,8 +139,13 @@ export default async function PortfoliosPage() {
                   <p className="font-bold">{fmt(card.cash)}</p>
                 </div>
                 <div className="rounded-xl bg-muted/30 px-3 py-2">
-                  <p className="text-xs text-muted-foreground">Invested</p>
+                  <p className="text-xs text-muted-foreground">Mkt Value</p>
                   <p className="font-bold">{fmt(card.invested)}</p>
+                  {Math.abs(card.unrealizedPnl) >= 0.01 && (
+                    <p className={`text-xs font-semibold ${card.unrealizedPnl > 0 ? "text-green-400" : "text-red-400"}`}>
+                      {card.unrealizedPnl >= 0 ? "+" : ""}{fmt(card.unrealizedPnl)} unrlzd
+                    </p>
+                  )}
                 </div>
                 <div className="rounded-xl bg-muted/30 px-3 py-2">
                   <p className="text-xs text-muted-foreground">Realized P&L</p>
