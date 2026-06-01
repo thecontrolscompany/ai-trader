@@ -132,17 +132,18 @@ riskLevel rules:
 - "aggressive": stop loss >7%, or high beta (>1.4), or small-cap`;
 }
 
-export async function callClaude(stocks: StockRow[]): Promise<RawScanResult> {
+export async function callClaude(stocks: StockRow[], customSystemPrompt?: string): Promise<RawScanResult> {
   const client = new Anthropic({ apiKey: process.env.ANTHROPIC_API_KEY });
   const historicalContext = await getHistoricalScanContext();
   const universe = stocks.length > 0 && hasTrendFields(stocks[0])
     ? stocks as EnrichedStockRow[]
     : await enrichStockUniverse(stocks, 40);
   const prompt = buildUserPrompt(universe, "Claude Sonnet 4.6", historicalContext);
+  const systemText = customSystemPrompt ?? SYSTEM_PROMPT;
   const response = await client.messages.create({
     model: "claude-sonnet-4-6",
     max_tokens: 4096,
-    system: [{ type: "text", text: SYSTEM_PROMPT, cache_control: { type: "ephemeral" } }],
+    system: [{ type: "text", text: systemText, cache_control: { type: "ephemeral" } }],
     messages: [{ role: "user", content: prompt }],
   });
   const text = response.content
@@ -158,18 +159,19 @@ export async function callClaude(stocks: StockRow[]): Promise<RawScanResult> {
   };
 }
 
-export async function callOpenAI(stocks: StockRow[]): Promise<RawScanResult> {
+export async function callOpenAI(stocks: StockRow[], customSystemPrompt?: string): Promise<RawScanResult> {
   const client = new OpenAI({ apiKey: process.env.OPENAI_API_KEY });
   const historicalContext = await getHistoricalScanContext();
   const universe = stocks.length > 0 && hasTrendFields(stocks[0])
     ? stocks as EnrichedStockRow[]
     : await enrichStockUniverse(stocks, 40);
   const prompt = buildUserPrompt(universe, "GPT-4o", historicalContext);
+  const systemText = customSystemPrompt ?? SYSTEM_PROMPT;
   const response = await client.chat.completions.create({
     model: "gpt-4o",
     response_format: { type: "json_object" },
     messages: [
-      { role: "system", content: SYSTEM_PROMPT },
+      { role: "system", content: systemText },
       { role: "user", content: prompt },
     ],
   });

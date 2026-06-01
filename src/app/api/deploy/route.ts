@@ -1,6 +1,7 @@
 import { db } from "@/db";
-import { accounts, trades } from "@/db/schema";
+import { accounts, aiModels, trades } from "@/db/schema";
 import { requirePortfolio, getPortfolioAccountIds } from "@/lib/portfolio";
+import { getActiveModel } from "@/lib/activeModel";
 import { calcBuyFees } from "@/lib/fees";
 import { fetchTopStocks } from "@/lib/fetchStocks";
 import { callClaude, callOpenAI } from "@/lib/scanHelpers";
@@ -27,14 +28,20 @@ export async function POST(req: NextRequest) {
   const { brokerageId } = await getPortfolioAccountIds(portfolioId);
 
   if (body.action === "preview") {
-    const model = body.model ?? "openai";
+    // Resolve model: use specific model ID if provided (admin testing), otherwise use active model
+    let selectedModel = await getActiveModel();
+    if (body.modelId) {
+      const [override] = await db.select().from(aiModels).where(eq(aiModels.id, body.modelId)).limit(1);
+      if (override) selectedModel = override;
+    }
+
     const [brokerage] = await db.select().from(accounts).where(eq(accounts.id, brokerageId)).limit(1);
     const balance = brokerage?.balance ?? 0;
     if (balance < 1) return NextResponse.json({ error: "Brokerage balance is $0. Deposit funds first." }, { status: 400 });
 
     const openTickers = new Set((await db.select().from(trades).where(eq(trades.portfolioId, portfolioId))).filter(t => t.status === "open").map(t => t.ticker));
     const stocks = await fetchTopStocks();
-    const raw = model === "claude" ? await callClaude(stocks) : await callOpenAI(stocks);
+    const raw = selectedModel.provider === "claude" ? await callClaude(stocks, selectedModel.customPrompt ?? undefined) : await callOpenAI(stocks, selectedModel.customPrompt ?? undefined);
 
     // eslint-disable-next-line @typescript-eslint/no-explicit-any
     const qualifying = ((raw.picks ?? []) as any[])
@@ -60,7 +67,7 @@ export async function POST(req: NextRequest) {
       };
     });
 
-    return NextResponse.json({ balance, totalInvest: picks.reduce((s, p) => s + p.invest, 0), picks, model: raw.model ?? model, summary: raw.summary ?? "" });
+    return NextResponse.json({ balance, totalInvest: picks.reduce((s, p) => s + p.invest, 0), picks, model: raw.model ?? selectedModel.name, summary: raw.summary ?? "" });
   }
 
   if (body.action === "execute") {

@@ -1,7 +1,11 @@
+import { db } from "@/db";
+import { aiModels } from "@/db/schema";
+import { getActiveModel } from "@/lib/activeModel";
 import { fetchTopStocks } from "@/lib/fetchStocks";
 import { saveScanSignals } from "@/lib/roiTracker";
 import { callClaude, callOpenAI } from "@/lib/scanHelpers";
 import { enrichStockUniverse, type EnrichedStockRow } from "@/lib/stockAnalysis";
+import { eq } from "drizzle-orm";
 import { NextRequest, NextResponse } from "next/server";
 import type { StockRow } from "@/app/api/stocks/route";
 
@@ -181,9 +185,12 @@ function mergeModelRuns(openai: ModelRunResult, claude: ModelRunResult): ScanPic
 async function runAndPersistModel(
   model: "openai" | "claude",
   stocks: StockRow[],
-  stockMap: Record<string, EnrichedStockRow>
+  stockMap: Record<string, EnrichedStockRow>,
+  customPrompt?: string | null,
 ): Promise<ModelRunResult> {
-  const raw = model === "claude" ? await callClaude(stocks) : await callOpenAI(stocks);
+  const raw = model === "claude"
+    ? await callClaude(stocks, customPrompt ?? undefined)
+    : await callOpenAI(stocks, customPrompt ?? undefined);
   const normalized = ((raw.picks ?? []) as RawModelPick[])
     .map((pick) => normalizePick(pick, stockMap))
     .filter((pick): pick is Omit<ScanPick, "signalId" | "sourceModels" | "agreementScore"> => Boolean(pick));
@@ -205,15 +212,28 @@ async function runAndPersistModel(
 }
 
 export async function POST(req: NextRequest) {
-  const { model }: { model: ScanModel } = await req.json();
+  const body = await req.json();
+  // Support both legacy model string and new modelConfigId from DB
+  let model: ScanModel | "active" = body.model ?? "active";
+  let customPrompt: string | null = null;
 
-  if (!["claude", "openai", "compare"].includes(model))
-    return NextResponse.json({ error: "Invalid model" }, { status: 400 });
+  // If a specific model config ID is passed (admin testing a specific model)
+  if (body.modelConfigId) {
+    const [cfg] = await db.select().from(aiModels).where(eq(aiModels.id, body.modelConfigId)).limit(1);
+    if (cfg) {
+      model = cfg.provider as ScanModel;
+      customPrompt = cfg.customPrompt ?? null;
+    }
+  } else if (model === "active" || !["claude", "openai", "compare"].includes(model)) {
+    // No specific model requested — use the active model from DB
+    const activeCfg = await getActiveModel();
+    model = activeCfg.provider as ScanModel;
+    customPrompt = activeCfg.customPrompt ?? null;
+  }
+
   if (model === "claude" && !process.env.ANTHROPIC_API_KEY)
     return NextResponse.json({ error: "ANTHROPIC_API_KEY not configured" }, { status: 500 });
-  if (model === "openai" && !process.env.OPENAI_API_KEY)
-    return NextResponse.json({ error: "OPENAI_API_KEY not configured" }, { status: 500 });
-  if (model === "compare" && !process.env.OPENAI_API_KEY)
+  if ((model === "openai" || model === "compare") && !process.env.OPENAI_API_KEY)
     return NextResponse.json({ error: "OPENAI_API_KEY not configured" }, { status: 500 });
   if (model === "compare" && !process.env.ANTHROPIC_API_KEY)
     return NextResponse.json({ error: "ANTHROPIC_API_KEY not configured" }, { status: 500 });
@@ -223,8 +243,8 @@ export async function POST(req: NextRequest) {
   const stockMap = Object.fromEntries(enrichedStocks.map((s) => [s.symbol, s])) as Record<string, EnrichedStockRow>;
   if (model === "compare") {
     const [openai, claude] = await Promise.all([
-      runAndPersistModel("openai", enrichedStocks, stockMap),
-      runAndPersistModel("claude", enrichedStocks, stockMap),
+      runAndPersistModel("openai", enrichedStocks, stockMap, customPrompt),
+      runAndPersistModel("claude", enrichedStocks, stockMap, customPrompt),
     ]);
     const openaiSymbols = new Set(openai.picks.map((pick) => pick.symbol));
     const claudeSymbols = new Set(claude.picks.map((pick) => pick.symbol));
@@ -253,7 +273,7 @@ export async function POST(req: NextRequest) {
     } as ScanResult);
   }
 
-  const single = await runAndPersistModel(model, enrichedStocks, stockMap);
+  const single = await runAndPersistModel(model as "openai" | "claude", enrichedStocks, stockMap, customPrompt);
   return NextResponse.json({
     ...single,
     scannedAt: new Date().toISOString(),

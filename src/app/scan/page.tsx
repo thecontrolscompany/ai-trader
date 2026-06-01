@@ -11,11 +11,7 @@ const RISK_CONFIG: Record<RiskLevel, { label: string; color: string; bg: string;
   aggressive:   { label: "Aggressive",   color: "text-red-400",    bg: "bg-red-400/10 border-red-400/30",      desc: "Higher potential gain, higher potential loss" },
 };
 
-const MODELS: { value: ScanModel; label: string; desc: string }[] = [
-  { value: "openai", label: "Codex / OpenAI", desc: "Fast, structured, and thorough" },
-  { value: "claude", label: "Claude Sonnet", desc: "Great at nuanced reasoning" },
-  { value: "compare", label: "Compare Both", desc: "Runs both and surfaces consensus" },
-];
+interface DBModel { id: string; name: string; provider: string; status: string; paperOnly: string; notes: string | null; }
 
 function ConfidenceBar({ value }: { value: number }) {
   const pct = Math.round(value * 100);
@@ -136,7 +132,9 @@ function OpenTradePanel({
 }
 
 export default function ScanPage() {
-  const [selectedModel, setSelectedModel] = useState<ScanModel>("openai");
+  // selectedModelConfigId: null = use active model from DB, otherwise a specific test model ID
+  const [selectedModelConfigId, setSelectedModelConfigId] = useState<string | null>(null);
+  const [dbModels, setDbModels] = useState<DBModel[]>([]);
   const [result, setResult] = useState<ScanResult | null>(null);
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
@@ -155,6 +153,12 @@ export default function ScanPage() {
         if (brokerage) setBrokerageBalance(brokerage.balance);
       })
       .catch(() => {});
+
+    // Load models from DB (admin only endpoint — gracefully ignored if 403)
+    fetch("/api/admin/models")
+      .then((r) => r.ok ? r.json() : [])
+      .then((models) => { if (Array.isArray(models)) setDbModels(models); })
+      .catch(() => {});
   }, []);
 
   async function runScan() {
@@ -166,7 +170,11 @@ export default function ScanPage() {
       const res = await fetch("/api/scan", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ model: selectedModel }),
+        body: JSON.stringify(
+          selectedModelConfigId
+            ? { modelConfigId: selectedModelConfigId }   // specific test model
+            : { model: "active" }                        // use active model from DB
+        ),
       });
       const data = await res.json();
       if (!res.ok) setError(data.error ?? "Scan failed");
@@ -202,17 +210,47 @@ export default function ScanPage() {
         </p>
       </div>
 
-      {/* Model selector */}
+      {/* Model selector — driven by DB */}
       <div className="space-y-3">
-        <p className="text-sm font-semibold uppercase tracking-wide text-muted-foreground">Choose AI Model</p>
-        <div className="grid grid-cols-1 gap-3 sm:grid-cols-3 max-w-2xl">
-          {MODELS.map((m) => (
-            <button key={m.value} onClick={() => setSelectedModel(m.value)}
-              className={`rounded-xl border-2 px-4 py-3 text-left transition-all ${selectedModel === m.value ? "border-primary bg-primary/10 text-foreground" : "border-border hover:border-muted-foreground text-muted-foreground"}`}>
-              <p className="font-bold text-sm">{m.label}</p>
-              <p className="text-xs mt-0.5 opacity-70">{m.desc}</p>
+        <p className="text-sm font-semibold uppercase tracking-wide text-muted-foreground">AI Model</p>
+        <div className="flex flex-wrap gap-2">
+          {/* Active model (always shown as default) */}
+          {(() => {
+            const active = dbModels.find(m => m.status === "active");
+            return (
+              <button onClick={() => setSelectedModelConfigId(null)}
+                className={`rounded-xl border-2 px-4 py-2.5 text-left transition-all ${selectedModelConfigId === null ? "border-primary bg-primary/10" : "border-border hover:border-muted-foreground text-muted-foreground"}`}>
+                <div className="flex items-center gap-2">
+                  <span className="w-1.5 h-1.5 rounded-full bg-green-400" />
+                  <p className="font-bold text-sm">{active?.name ?? "Active Model"}</p>
+                  <span className="text-xs text-green-400">Active</span>
+                </div>
+                <p className="text-xs mt-0.5 opacity-70">Used by all portfolios</p>
+              </button>
+            );
+          })()}
+
+          {/* Test models (admin only — only shown when dbModels loaded) */}
+          {dbModels.filter(m => m.status === "testing").map(m => (
+            <button key={m.id} onClick={() => setSelectedModelConfigId(m.id)}
+              className={`rounded-xl border-2 px-4 py-2.5 text-left transition-all ${selectedModelConfigId === m.id ? "border-yellow-400 bg-yellow-400/10" : "border-border hover:border-yellow-400/50 text-muted-foreground"}`}>
+              <div className="flex items-center gap-2">
+                <span className="w-1.5 h-1.5 rounded-full bg-yellow-400" />
+                <p className="font-bold text-sm">{m.name}</p>
+                <span className="text-xs text-yellow-400">Testing</span>
+              </div>
+              <p className="text-xs mt-0.5 opacity-70">{m.notes?.slice(0, 40) ?? "Paper only"}</p>
             </button>
           ))}
+
+          {/* Compare — only if both keys available */}
+          {dbModels.some(m => m.provider === "openai") && dbModels.some(m => m.provider === "claude") && (
+            <button onClick={() => { setSelectedModelConfigId(null); /* handled server-side */ }}
+              className="rounded-xl border-2 border-border hover:border-muted-foreground text-muted-foreground px-4 py-2.5 text-left transition-all">
+              <p className="font-bold text-sm">Compare Both</p>
+              <p className="text-xs mt-0.5 opacity-70">Surfaces consensus picks</p>
+            </button>
+          )}
         </div>
       </div>
 
