@@ -1,56 +1,64 @@
-// Market data provider — swap fetchYahooV8Quote for fetchTradierQuote when going live.
-// Tradier endpoint: GET https://api.tradier.com/v1/markets/quotes?symbols=AAPL,MSFT
-// Headers: Authorization: Bearer <TRADIER_API_KEY>, Accept: application/json
-// The response shape differs; update the mapping in a fetchTradierQuotes function accordingly.
+// Market data provider — Tradier API (developer: delayed quotes; brokerage account: real-time).
+// To go live with real-time quotes: fund a Tradier brokerage account and update TRADIER_API_KEY
+// with the brokerage account token — no code changes needed.
 
 import type { MarketQuote } from "./types";
 
-// Yahoo Finance v8 chart endpoint — works without authentication (v7 requires a crumb/cookie).
-// One request per ticker; parallel fetches via getQuotes.
-async function fetchYahooV8Quote(ticker: string): Promise<MarketQuote | null> {
-  const sym = ticker.toUpperCase();
+async function fetchTradierQuotes(tickers: string[]): Promise<Map<string, MarketQuote>> {
+  const token = process.env.TRADIER_API_KEY;
+  if (!token) return new Map();
+
+  const symbols = tickers.map((t) => t.toUpperCase()).join(",");
+
   const res = await fetch(
-    `https://query1.finance.yahoo.com/v8/finance/chart/${sym}?interval=1d&range=1d`,
+    `https://api.tradier.com/v1/markets/quotes?symbols=${symbols}&greeks=false`,
     {
-      headers: { "User-Agent": "Mozilla/5.0" },
+      headers: {
+        Authorization: `Bearer ${token}`,
+        Accept: "application/json",
+      },
       next: { revalidate: 60 },
     }
   );
 
-  if (!res.ok) return null;
+  if (!res.ok) return new Map();
 
   const data = await res.json();
-  const meta = data?.chart?.result?.[0]?.meta;
-  if (!meta || typeof meta.regularMarketPrice !== "number") return null;
+  const raw = data?.quotes?.quote;
+  if (!raw) return new Map();
 
-  const price = meta.regularMarketPrice as number;
-  const previousClose = (meta.chartPreviousClose ?? meta.previousClose ?? price) as number;
-  const change = price - previousClose;
-  const changePct = previousClose > 0 ? (change / previousClose) * 100 : 0;
+  // Tradier returns an object for a single ticker, array for multiple
+  const quotes: unknown[] = Array.isArray(raw) ? raw : [raw];
 
-  return {
-    ticker: sym,
-    price,
-    previousClose,
-    change,
-    changePct,
-    currency: (meta.currency as string) ?? "USD",
-    exchangeName: (meta.exchangeName as string) ?? "",
-    marketState: (meta.marketState as string) ?? "",
-  };
+  const map = new Map<string, MarketQuote>();
+  for (const item of quotes) {
+    const q = item as Record<string, unknown>;
+    const sym = q.symbol as string | undefined;
+    const price = q.last as number | null;
+    if (!sym || price == null) continue;
+
+    const previousClose = (q.prevclose as number) ?? price;
+    const change = (q.change as number) ?? price - previousClose;
+    const changePct = (q.change_percentage as number) ?? 0;
+
+    map.set(sym, {
+      ticker: sym,
+      price,
+      previousClose,
+      change,
+      changePct,
+      currency: "USD",
+      exchangeName: (q.exch as string) ?? "",
+      marketState: price != null ? "REGULAR" : "CLOSED",
+    });
+  }
+  return map;
 }
 
 export async function getQuotes(tickers: string[]): Promise<Map<string, MarketQuote>> {
   if (tickers.length === 0) return new Map();
   try {
-    const results = await Promise.allSettled(tickers.map((t) => fetchYahooV8Quote(t)));
-    const map = new Map<string, MarketQuote>();
-    results.forEach((result, i) => {
-      if (result.status === "fulfilled" && result.value) {
-        map.set(tickers[i].toUpperCase(), result.value);
-      }
-    });
-    return map;
+    return await fetchTradierQuotes(tickers);
   } catch {
     return new Map();
   }
