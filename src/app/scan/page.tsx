@@ -1,6 +1,6 @@
 "use client";
 
-import { useEffect, useMemo, useState } from "react";
+import { Suspense, useEffect, useMemo, useState } from "react";
 import { useSearchParams } from "next/navigation";
 import { Badge } from "@/components/ui/badge";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
@@ -132,7 +132,7 @@ function OpenTradePanel({
   );
 }
 
-export default function ScanPage() {
+function ScanContent() {
   const searchParams = useSearchParams();
   const portfolioKey = searchParams.get("p") ?? "default";
 
@@ -531,5 +531,13 @@ export default function ScanPage() {
         </div>
       )}
     </div>
+  );
+}
+
+export default function ScanPage() {
+  return (
+    <Suspense fallback={<div className="text-muted-foreground text-sm animate-pulse">Loading…</div>}>
+      <ScanContent />
+    </Suspense>
   );
 }

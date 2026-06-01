@@ -1,6 +1,6 @@
 "use client";
 
-import { useEffect, useState, useCallback } from "react";
+import { Suspense, useEffect, useState, useCallback } from "react";
 import { useSearchParams } from "next/navigation";
 import type { DeployPick } from "@/app/api/deploy/route";
 
@@ -26,8 +26,8 @@ function pct(n: number) {
   return (n >= 0 ? "+" : "") + n.toFixed(2) + "%";
 }
 
-export default function AccountsPage() {
-  // The ?p= param changes on portfolio switch, forcing this component to re-fetch
+// Inner component that uses useSearchParams — must be inside <Suspense>
+function AccountsContent() {
   const searchParams = useSearchParams();
   const portfolioKey = searchParams.get("p") ?? "default";
 
@@ -470,5 +470,13 @@ export default function AccountsPage() {
       </div>
 
     </div>
+  );
+}
+
+export default function AccountsPage() {
+  return (
+    <Suspense fallback={<div className="text-muted-foreground text-sm animate-pulse">Loading…</div>}>
+      <AccountsContent />
+    </Suspense>
   );
 }
