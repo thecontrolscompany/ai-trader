@@ -5,6 +5,7 @@ import {
   pgTable,
   text,
   timestamp,
+  unique,
   uuid,
 } from "drizzle-orm/pg-core";
 
@@ -118,6 +119,16 @@ export const autoTradeLog = pgTable("auto_trade_log", {
   reason: text("reason"),
   createdAt: timestamp("created_at").notNull().defaultNow(),
 });
+
+// One row per portfolio per calendar day (ET). Upserted on each page load.
+// Used to calculate daily / weekly / monthly return %.
+export const portfolioSnapshots = pgTable("portfolio_snapshots", {
+  id: uuid("id").primaryKey().default(sql`gen_random_uuid()`),
+  portfolioId: uuid("portfolio_id").notNull().references(() => portfolios.id),
+  date: text("date").notNull(), // YYYY-MM-DD in ET
+  totalValue: doublePrecision("total_value").notNull(),
+  updatedAt: timestamp("updated_at").notNull().defaultNow(),
+}, (t) => [unique("portfolio_snapshots_portfolio_date").on(t.portfolioId, t.date)]);
 
 export type Portfolio = typeof portfolios.$inferSelect;
 export type Trade = typeof trades.$inferSelect;

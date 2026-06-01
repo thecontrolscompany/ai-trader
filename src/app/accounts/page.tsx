@@ -33,6 +33,7 @@ function AccountsContent() {
   const [positions, setPositions] = useState<Position[]>([]);
   const [loading, setLoading]     = useState(true);
   const [posLoading, setPosLoading] = useState(false);
+  const [returns, setReturns] = useState<{ day: number | null; week: number | null; month: number | null; year: number | null } | null>(null);
 
   const [amount, setAmount]   = useState("");
   const [note, setNote]       = useState("");
@@ -147,7 +148,11 @@ function AccountsContent() {
     }
   }, []);
 
-  useEffect(() => { load(); loadPositions(); }, [load, loadPositions]);
+  useEffect(() => {
+    load();
+    loadPositions();
+    fetch("/api/portfolio-returns").then(r => r.ok ? r.json() : null).then(d => { if (d) setReturns(d); }).catch(() => {});
+  }, [load, loadPositions]);
 
   const bank      = accounts.find((a) => a.type === "bank");
   const brokerage = accounts.find((a) => a.type === "brokerage");
@@ -203,6 +208,17 @@ function AccountsContent() {
         {positions.length > 0 && Math.abs(totalPnl) < 0.01 && (
           <p className="text-xs text-muted-foreground mt-1">{positions.length} open position{positions.length !== 1 ? "s" : ""}</p>
         )}
+        {/* Returns strip */}
+        <div className="grid grid-cols-4 gap-2 mt-3">
+          {([ ["Day", returns?.day], ["Week", returns?.week], ["Month", returns?.month], ["Year", returns?.year] ] as [string, number | null | undefined][]).map(([label, pct]) => (
+            <div key={label} className="rounded-xl bg-muted/30 px-2 py-2 text-center">
+              <p className="text-xs text-muted-foreground">{label}</p>
+              <p className={`text-sm font-bold ${pct == null ? "text-muted-foreground" : pct >= 0 ? "text-green-400" : "text-red-400"}`}>
+                {pct == null ? "—" : (pct >= 0 ? "+" : "") + pct.toFixed(2) + "%"}
+              </p>
+            </div>
+          ))}
+        </div>
       </div>
 
       {/* ── Positions ── */}

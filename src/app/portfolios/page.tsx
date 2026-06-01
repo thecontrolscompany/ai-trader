@@ -1,5 +1,5 @@
 import { db } from "@/db";
-import { accounts, autoTradeSettings, aiModels, trades, portfolios } from "@/db/schema";
+import { accounts, autoTradeSettings, aiModels, trades, portfolios, portfolioSnapshots } from "@/db/schema";
 import { getActivePortfolio } from "@/lib/portfolio";
 import { getQuotes } from "@/lib/marketProvider";
 import { auth } from "@/auth";
@@ -13,7 +13,10 @@ function fmt(n: number) {
   return n.toLocaleString("en-US", { style: "currency", currency: "USD" });
 }
 function pctStr(n: number) {
-  return (n >= 0 ? "+" : "") + n.toFixed(1) + "%";
+  return (n >= 0 ? "+" : "") + n.toFixed(2) + "%";
+}
+function todayET(): string {
+  return new Date().toLocaleDateString("en-CA", { timeZone: "America/New_York" });
 }
 
 export default async function PortfoliosPage() {
@@ -27,11 +30,12 @@ export default async function PortfoliosPage() {
 
   const portfolioIds = userPortfolios.map(p => p.id);
 
-  const [allAccounts, allTrades, allSettings, allModels] = await Promise.all([
+  const [allAccounts, allTrades, allSettings, allModels, allSnapshots] = await Promise.all([
     db.select().from(accounts).where(inArray(accounts.portfolioId, portfolioIds)),
     db.select().from(trades).where(inArray(trades.portfolioId, portfolioIds)),
     db.select().from(autoTradeSettings).where(inArray(autoTradeSettings.portfolioId, portfolioIds)),
     db.select().from(aiModels),
+    db.select().from(portfolioSnapshots).where(inArray(portfolioSnapshots.portfolioId, portfolioIds)),
   ]);
 
   const openTrades = allTrades.filter(t => t.status === "open");
@@ -72,10 +76,11 @@ export default async function PortfoliosPage() {
       modelStatus = match?.status ?? null;
     }
 
+    const totalValue = cash + invested;
     return {
       id: p.id, name: p.name, mode: p.mode, broker: p.broker,
       isActive: p.id === activePortfolio?.id,
-      cash, invested, totalValue: cash + invested,
+      cash, invested, totalValue,
       unrealizedPnl, realizedPnl,
       openTrades: open.length, closedTrades: closed.length, wins,
       modelName, modelStatus,
@@ -85,6 +90,33 @@ export default async function PortfoliosPage() {
     if (!a.isActive && b.isActive) return 1;
     return b.totalValue - a.totalValue;
   });
+
+  // Upsert today's snapshot for every portfolio
+  const today = todayET();
+  await Promise.all(
+    cards.map(card =>
+      db.insert(portfolioSnapshots)
+        .values({ portfolioId: card.id, date: today, totalValue: card.totalValue })
+        .onConflictDoUpdate({
+          target: [portfolioSnapshots.portfolioId, portfolioSnapshots.date],
+          set: { totalValue: card.totalValue, updatedAt: new Date() },
+        })
+    )
+  );
+
+  // Return % helper: find the most recent snapshot on or before N days ago
+  function returnPct(portfolioId: string, daysAgo: number, current: number): number | null {
+    const cutoff = new Date();
+    cutoff.setDate(cutoff.getDate() - daysAgo);
+    const cutoffStr = cutoff.toLocaleDateString("en-CA", { timeZone: "America/New_York" });
+
+    const past = allSnapshots
+      .filter(s => s.portfolioId === portfolioId && s.date <= cutoffStr)
+      .sort((a, b) => b.date.localeCompare(a.date))[0];
+
+    if (!past || past.totalValue === 0) return null;
+    return ((current - past.totalValue) / past.totalValue) * 100;
+  }
 
   return (
     <div className="space-y-6 max-w-6xl">
@@ -98,7 +130,10 @@ export default async function PortfoliosPage() {
       <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-4">
         {cards.map(card => {
           const winRate   = card.closedTrades > 0 ? (card.wins / card.closedTrades) * 100 : null;
-          const returnPct = card.totalValue > 0 ? (card.realizedPnl / card.totalValue) * 100 : null;
+          const dayPct    = returnPct(card.id, 1, card.totalValue);
+          const weekPct   = returnPct(card.id, 7, card.totalValue);
+          const monthPct  = returnPct(card.id, 30, card.totalValue);
+          const yearPct   = returnPct(card.id, 365, card.totalValue);
 
           return (
             <div key={card.id} className={`rounded-2xl border-2 p-5 space-y-4 ${card.isActive ? "border-primary/50 bg-primary/5" : "border-border bg-card"}`}>
@@ -132,6 +167,18 @@ export default async function PortfoliosPage() {
                 </div>
               )}
 
+              {/* Returns row */}
+              <div className="grid grid-cols-4 gap-1 text-center">
+                {([["Day", dayPct], ["Week", weekPct], ["Month", monthPct], ["Year", yearPct]] as [string, number | null][]).map(([label, pct]) => (
+                  <div key={label} className="rounded-xl bg-muted/30 px-1 py-2">
+                    <p className="text-xs text-muted-foreground mb-0.5">{label}</p>
+                    <p className={`text-xs font-bold ${pct == null ? "text-muted-foreground" : pct >= 0 ? "text-green-400" : "text-red-400"}`}>
+                      {pct == null ? "—" : pctStr(pct)}
+                    </p>
+                  </div>
+                ))}
+              </div>
+
               {/* Metrics */}
               <div className="grid grid-cols-2 gap-2 text-sm">
                 <div className="rounded-xl bg-muted/30 px-3 py-2">
@@ -151,7 +198,6 @@ export default async function PortfoliosPage() {
                   <p className="text-xs text-muted-foreground">Realized P&L</p>
                   <p className={`font-bold text-sm ${card.realizedPnl > 0 ? "text-green-400" : card.realizedPnl < 0 ? "text-red-400" : ""}`}>
                     {card.realizedPnl >= 0 ? "+" : ""}{fmt(card.realizedPnl)}
-                    {returnPct !== null && <span className="text-xs font-normal opacity-70 ml-1">({pctStr(returnPct)})</span>}
                   </p>
                 </div>
                 <div className="rounded-xl bg-muted/30 px-3 py-2">
@@ -165,7 +211,6 @@ export default async function PortfoliosPage() {
 
               <p className="text-xs text-muted-foreground">{card.openTrades} open · {card.closedTrades} closed</p>
 
-              {/* Client actions */}
               <PortfolioActions portfolioId={card.id} isActive={card.isActive} />
             </div>
           );
