@@ -34,7 +34,11 @@ export default function AutoTradePage() {
   async function load() {
     try {
       const res = await fetch("/api/auto-trade");
-      if (!res.ok) { setLoadError(`Server error ${res.status}`); return; }
+      if (!res.ok) {
+        let msg = `Server error ${res.status}`;
+        try { const d = await res.json(); if (d.error) msg = d.error; } catch { /* ignore */ }
+        setLoadError(msg); return;
+      }
       const data = await res.json();
       if (!data.settings) { setLoadError("Settings not returned from server"); return; }
       setSettings(data.settings);
