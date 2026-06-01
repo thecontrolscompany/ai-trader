@@ -2,6 +2,7 @@ import type { Metadata } from "next";
 import { Geist } from "next/font/google";
 import { auth } from "@/auth";
 import BottomNav from "@/components/BottomNav";
+import MarketStatusBar from "@/components/MarketStatusBar";
 import NavBar from "@/components/NavBar";
 import TickerBar from "@/components/TickerBar";
 import "./globals.css";
@@ -21,6 +22,7 @@ export default async function RootLayout({ children }: { children: React.ReactNo
     <html lang="en">
       <body className={`${geist.className} bg-background text-foreground min-h-screen`}>
         <TickerBar />
+        <MarketStatusBar />
         <NavBar
           isLoggedIn={isLoggedIn}
           userName={session?.user?.name}
