@@ -35,14 +35,59 @@ async function fetchScreener(scrId: string, count = 50): Promise<StockRow[]> {
 }
 
 async function fetchBySymbols(symbols: string[]): Promise<StockRow[]> {
+  const token = process.env.TRADIER_API_KEY;
+  if (token) {
+    try {
+      const res = await fetch(
+        `https://api.tradier.com/v1/markets/quotes?symbols=${symbols.join(",")}&greeks=false`,
+        { headers: { Authorization: `Bearer ${token}`, Accept: "application/json" }, next: { revalidate: 300 } }
+      );
+      if (res.ok) {
+        const data = await res.json();
+        const raw = data?.quotes?.quote;
+        if (raw) {
+          const quotes: Record<string, unknown>[] = Array.isArray(raw) ? raw : [raw];
+          return quotes.map((q) => ({
+            symbol:        String(q.symbol ?? ""),
+            name:          String(q.description ?? q.symbol ?? ""),
+            price:         Number(q.last ?? q.close ?? 0),
+            change:        Number(q.change ?? 0),
+            changePct:     Number(q.change_percentage ?? 0),
+            volume:        Number(q.volume ?? 0),
+            avgVolume:     Number(q.average_volume ?? 0),
+            marketCap:     null,
+            pe:            null,
+            eps:           null,
+            beta:          null,
+            weekHigh52:    q.week_52_high != null ? Number(q.week_52_high) : null,
+            weekLow52:     q.week_52_low  != null ? Number(q.week_52_low)  : null,
+            dividendYield: null,
+          })).filter((r) => r.price > 0);
+        }
+      }
+    } catch { /* fall through */ }
+  }
+  // Fallback: Yahoo Finance v8 (individual calls — v7 requires auth)
   try {
-    const res = await fetch(
-      `https://query1.finance.yahoo.com/v7/finance/quote?symbols=${symbols.join(",")}`,
-      { headers: { "User-Agent": "Mozilla/5.0" }, next: { revalidate: 300 } }
-    );
-    if (!res.ok) return [];
-    const json = await res.json();
-    return (json?.quoteResponse?.result ?? []).map(mapQuote);
+    const results = await Promise.allSettled(symbols.map(async (sym) => {
+      const r = await fetch(
+        `https://query1.finance.yahoo.com/v8/finance/chart/${sym}?interval=1d&range=1d`,
+        { headers: { "User-Agent": "Mozilla/5.0" }, next: { revalidate: 300 } }
+      );
+      if (!r.ok) return null;
+      const d = await r.json();
+      const meta = d?.chart?.result?.[0]?.meta;
+      if (!meta?.regularMarketPrice) return null;
+      return {
+        symbol: sym, name: sym,
+        price: Number(meta.regularMarketPrice),
+        change: Number(meta.regularMarketPrice) - Number(meta.chartPreviousClose ?? meta.regularMarketPrice),
+        changePct: 0, volume: 0, avgVolume: 0,
+        marketCap: null, pe: null, eps: null, beta: null,
+        weekHigh52: null, weekLow52: null, dividendYield: null,
+      } as StockRow;
+    }));
+    return results.flatMap(r => r.status === "fulfilled" && r.value ? [r.value] : []);
   } catch { return []; }
 }
 

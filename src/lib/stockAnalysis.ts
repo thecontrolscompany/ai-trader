@@ -125,13 +125,39 @@ function snapshotScore(stock: StockRow): number {
 }
 
 async function fetchHistoricalSeries(symbol: string): Promise<HistoricalPoint[]> {
+  const token = process.env.TRADIER_API_KEY;
+  if (token) {
+    try {
+      const end   = new Date().toISOString().slice(0, 10);
+      const start = new Date(Date.now() - 366 * 24 * 60 * 60 * 1000).toISOString().slice(0, 10);
+      const res = await fetch(
+        `https://api.tradier.com/v1/markets/history?symbol=${encodeURIComponent(symbol)}&interval=daily&start=${start}&end=${end}`,
+        { headers: { Authorization: `Bearer ${token}`, Accept: "application/json" }, next: { revalidate: 300 } }
+      );
+      if (res.ok) {
+        const data = await res.json();
+        const days = data?.history?.day;
+        if (days) {
+          const arr: Record<string, unknown>[] = Array.isArray(days) ? days : [days];
+          const points = arr.map((d) => ({
+            date:   String(d.date),
+            close:  Number(d.close),
+            high:   Number(d.high),
+            low:    Number(d.low),
+            volume: Number(d.volume),
+          })).filter((row) => row.close > 0);
+          if (points.length > 0) return points;
+        }
+      }
+    } catch { /* fall through to Yahoo fallback */ }
+  }
+
+  // Fallback: Yahoo Finance v8 (no auth required)
   const response = await fetch(
     `https://query1.finance.yahoo.com/v8/finance/chart/${encodeURIComponent(symbol)}?range=1y&interval=1d&includePrePost=false&events=div,splits`,
     { headers: { "User-Agent": "Mozilla/5.0" }, next: { revalidate: 300 } }
   );
-
   if (!response.ok) return [];
-
   const json = await response.json();
   const result = json?.chart?.result?.[0];
   const timestamps: number[] = result?.timestamp ?? [];
@@ -140,12 +166,11 @@ async function fetchHistoricalSeries(symbol: string): Promise<HistoricalPoint[]>
   const highs: number[] = quote.high ?? [];
   const lows: number[] = quote.low ?? [];
   const volumes: number[] = quote.volume ?? [];
-
   return timestamps.map((ts, index) => ({
-    date: new Date(ts * 1000).toISOString().slice(0, 10),
-    close: Number(closes[index] ?? 0),
-    high: Number(highs[index] ?? closes[index] ?? 0),
-    low: Number(lows[index] ?? closes[index] ?? 0),
+    date:   new Date(ts * 1000).toISOString().slice(0, 10),
+    close:  Number(closes[index] ?? 0),
+    high:   Number(highs[index] ?? closes[index] ?? 0),
+    low:    Number(lows[index] ?? closes[index] ?? 0),
     volume: Number(volumes[index] ?? 0),
   })).filter((row) => row.close > 0);
 }
