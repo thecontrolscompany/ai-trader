@@ -5,6 +5,7 @@ import Link from "next/link";
 import { signIn, signOut } from "next-auth/react";
 import { usePathname } from "next/navigation";
 import { useState } from "react";
+import PortfolioSwitcher from "@/components/PortfolioSwitcher";
 
 // Always visible — no login required
 const publicLinks = [
@@ -20,13 +21,21 @@ const privateLinks = [
   { href: "/trades/new",   label: "+ New Trade" },
 ];
 
+// Buried — desktop only, in hamburger menu on mobile
+const researchLinks = [
+  { href: "/activity",     label: "Activity Log" },
+];
+
 interface Props {
   isLoggedIn: boolean;
   userName?: string | null;
   userImage?: string | null;
+  activePortfolioId?: string | null;
+  portfolioName?: string | null;
+  portfolioMode?: string | null;
 }
 
-export default function NavBar({ isLoggedIn, userName, userImage }: Props) {
+export default function NavBar({ isLoggedIn, userName, userImage, activePortfolioId }: Props) {
   const pathname = usePathname();
   const [open, setOpen] = useState(false);
 
@@ -73,6 +82,21 @@ export default function NavBar({ isLoggedIn, userName, userImage }: Props) {
               {l.label}
             </Link>
           ))}
+
+          {/* Research links — desktop, buried */}
+          {isLoggedIn && researchLinks.map((l) => (
+            <Link key={l.href} href={l.href}
+              className="px-2 py-1.5 rounded-lg text-xs font-medium text-muted-foreground/60 hover:text-muted-foreground hover:bg-accent transition-colors whitespace-nowrap">
+              {l.label}
+            </Link>
+          ))}
+
+          {/* Portfolio switcher */}
+          {isLoggedIn && (
+            <div className="ml-2 pl-2 border-l border-border">
+              <PortfolioSwitcher activeId={activePortfolioId ?? null} />
+            </div>
+          )}
 
           {/* Auth controls */}
           <div className="flex items-center gap-2 ml-2 pl-2 border-l border-border">
@@ -129,6 +153,21 @@ export default function NavBar({ isLoggedIn, userName, userImage }: Props) {
               {l.label}
             </Link>
           ))}
+
+          {/* Research links — buried at bottom */}
+          {isLoggedIn && researchLinks.map((l) => (
+            <Link key={l.href} href={l.href} onClick={() => setOpen(false)}
+              className="px-4 py-2 rounded-xl text-xs font-medium text-muted-foreground hover:text-foreground hover:bg-accent transition-colors">
+              {l.label}
+            </Link>
+          ))}
+
+          {/* Portfolio switcher in mobile menu */}
+          {isLoggedIn && (
+            <div className="px-4 py-2">
+              <PortfolioSwitcher activeId={activePortfolioId ?? null} />
+            </div>
+          )}
 
           {/* Auth row in mobile menu */}
           <div className="mt-1 pt-2 border-t border-border">

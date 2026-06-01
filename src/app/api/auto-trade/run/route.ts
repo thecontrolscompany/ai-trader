@@ -1,17 +1,15 @@
-import { runAutoTradeForUser } from "@/lib/autoTradeEngine";
-import { getSessionUserId } from "@/lib/session";
+import { runAutoTradeForPortfolio } from "@/lib/autoTradeEngine";
+import { requirePortfolio } from "@/lib/portfolio";
 import { NextResponse } from "next/server";
 
 export const maxDuration = 300;
 
 export async function POST() {
-  const result = await getSessionUserId();
-  if ("error" in result) return result.error;
-  const { userId } = result;
-
+  const r = await requirePortfolio();
+  if ("error" in r) return r.error;
   try {
-    const runResult = await runAutoTradeForUser(userId, true);
-    return NextResponse.json(runResult);
+    const result = await runAutoTradeForPortfolio(r.portfolioId, true);
+    return NextResponse.json(result);
   } catch (e) {
     return NextResponse.json({ error: String(e) }, { status: 500 });
   }

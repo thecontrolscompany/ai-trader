@@ -1,39 +1,28 @@
 import { db } from "@/db";
 import { accounts, trades, transfers } from "@/db/schema";
-import { getBrokerageId } from "@/lib/accounts";
+import { requirePortfolio, getPortfolioAccountIds } from "@/lib/portfolio";
 import { calcSellFees } from "@/lib/fees";
 import { newId } from "@/lib/id";
-import { getSessionUserId } from "@/lib/session";
 import { and, eq } from "drizzle-orm";
 import { NextRequest, NextResponse } from "next/server";
 
-export async function GET(
-  _req: NextRequest,
-  { params }: { params: Promise<{ id: string }> }
-) {
-  const result = await getSessionUserId();
-  if ("error" in result) return result.error;
-  const { userId } = result;
+export async function GET(_req: NextRequest, { params }: { params: Promise<{ id: string }> }) {
+  const r = await requirePortfolio();
+  if ("error" in r) return r.error;
   const { id } = await params;
-
-  const [row] = await db.select().from(trades)
-    .where(and(eq(trades.id, id), eq(trades.userId, userId))).limit(1);
+  const [row] = await db.select().from(trades).where(and(eq(trades.id, id), eq(trades.portfolioId, r.portfolioId))).limit(1);
   if (!row) return NextResponse.json({ error: "Not found" }, { status: 404 });
   return NextResponse.json(row);
 }
 
-export async function PATCH(
-  req: NextRequest,
-  { params }: { params: Promise<{ id: string }> }
-) {
-  const result = await getSessionUserId();
-  if ("error" in result) return result.error;
-  const { userId } = result;
+export async function PATCH(req: NextRequest, { params }: { params: Promise<{ id: string }> }) {
+  const r = await requirePortfolio();
+  if ("error" in r) return r.error;
+  const { portfolioId } = r;
   const { id } = await params;
   const body = await req.json();
 
-  const [existing] = await db.select().from(trades)
-    .where(and(eq(trades.id, id), eq(trades.userId, userId))).limit(1);
+  const [existing] = await db.select().from(trades).where(and(eq(trades.id, id), eq(trades.portfolioId, portfolioId))).limit(1);
   if (!existing) return NextResponse.json({ error: "Not found" }, { status: 404 });
 
   const updates: Partial<typeof trades.$inferInsert> = {};
@@ -49,47 +38,31 @@ export async function PATCH(
     const sellFees  = calcSellFees(exitPrice, existing.quantity);
     const netProceeds = exitPrice * existing.quantity - sellFees;
     const pnl = netProceeds - existing.entryPrice * existing.quantity;
-    const pnlSign = pnl >= 0 ? "+" : "";
     updates.fees = (existing.fees ?? 0) + sellFees;
-
-    const brokerageId = await getBrokerageId(userId);
+    const { brokerageId } = await getPortfolioAccountIds(portfolioId);
     const [brokerage] = await db.select().from(accounts).where(eq(accounts.id, brokerageId)).limit(1);
     await Promise.all([
       db.update(accounts).set({ balance: brokerage.balance + netProceeds }).where(eq(accounts.id, brokerageId)),
-      db.insert(transfers).values({
-        id: newId(), userId,
-        fromAccountId: brokerageId, toAccountId: brokerageId,
-        amount: netProceeds,
-        note: `Trade closed: ${existing.ticker} ×${existing.quantity} @ $${exitPrice.toFixed(2)} — fees: $${sellFees.toFixed(2)} — P&L: ${pnlSign}$${pnl.toFixed(2)}`,
-      }),
+      db.insert(transfers).values({ id: newId(), portfolioId, fromAccountId: brokerageId, toAccountId: brokerageId, amount: netProceeds, note: `Trade closed: ${existing.ticker} ×${existing.quantity} @ $${exitPrice.toFixed(2)} — fees: $${sellFees.toFixed(2)} — P&L: ${pnl >= 0 ? "+" : ""}$${pnl.toFixed(2)}` }),
     ]);
   }
 
-  const [updated] = await db.update(trades).set(updates)
-    .where(and(eq(trades.id, id), eq(trades.userId, userId))).returning();
+  const [updated] = await db.update(trades).set(updates).where(and(eq(trades.id, id), eq(trades.portfolioId, portfolioId))).returning();
   return NextResponse.json(updated);
 }
 
-export async function DELETE(
-  _req: NextRequest,
-  { params }: { params: Promise<{ id: string }> }
-) {
-  const result = await getSessionUserId();
-  if ("error" in result) return result.error;
-  const { userId } = result;
+export async function DELETE(_req: NextRequest, { params }: { params: Promise<{ id: string }> }) {
+  const r = await requirePortfolio();
+  if ("error" in r) return r.error;
+  const { portfolioId } = r;
   const { id } = await params;
-
-  const [existing] = await db.select().from(trades)
-    .where(and(eq(trades.id, id), eq(trades.userId, userId))).limit(1);
+  const [existing] = await db.select().from(trades).where(and(eq(trades.id, id), eq(trades.portfolioId, portfolioId))).limit(1);
   if (!existing) return NextResponse.json({ error: "Not found" }, { status: 404 });
-
   if (existing.status === "open") {
-    const cost = existing.entryPrice * existing.quantity;
-    const brokerageId = await getBrokerageId(userId);
+    const { brokerageId } = await getPortfolioAccountIds(portfolioId);
     const [brokerage] = await db.select().from(accounts).where(eq(accounts.id, brokerageId)).limit(1);
-    await db.update(accounts).set({ balance: brokerage.balance + cost }).where(eq(accounts.id, brokerageId));
+    await db.update(accounts).set({ balance: brokerage.balance + existing.entryPrice * existing.quantity }).where(eq(accounts.id, brokerageId));
   }
-
-  await db.delete(trades).where(and(eq(trades.id, id), eq(trades.userId, userId)));
+  await db.delete(trades).where(and(eq(trades.id, id), eq(trades.portfolioId, portfolioId)));
   return NextResponse.json({ success: true });
 }

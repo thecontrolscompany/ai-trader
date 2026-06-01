@@ -1,32 +1,29 @@
 import { db } from "@/db";
 import { autoTradeLog, autoTradeSettings } from "@/db/schema";
-import { getSessionUserId } from "@/lib/session";
-import { eq, desc } from "drizzle-orm";
+import { requirePortfolio } from "@/lib/portfolio";
 import { newId } from "@/lib/id";
+import { eq, desc } from "drizzle-orm";
 import { NextRequest, NextResponse } from "next/server";
 
-async function getOrCreate(userId: string) {
+async function getOrCreate(portfolioId: string) {
   try {
     const [existing] = await db.select().from(autoTradeSettings)
-      .where(eq(autoTradeSettings.userId, userId)).limit(1);
+      .where(eq(autoTradeSettings.portfolioId, portfolioId)).limit(1);
     if (existing) return existing;
     const [created] = await db.insert(autoTradeSettings)
-      .values({ id: newId(), userId }).returning();
+      .values({ id: newId(), portfolioId }).returning();
     return created;
-  } catch (e) {
-    throw new Error(`getOrCreate failed for ${userId}: ${e}`);
-  }
+  } catch (e) { throw new Error(`getOrCreate failed: ${e}`); }
 }
 
 export async function GET() {
   try {
-    const result = await getSessionUserId();
-    if ("error" in result) return result.error;
-    const { userId } = result;
-
-    const settings = await getOrCreate(userId);
+    const r = await requirePortfolio();
+    if ("error" in r) return r.error;
+    const { portfolioId } = r;
+    const settings = await getOrCreate(portfolioId);
     const log = await db.select().from(autoTradeLog)
-      .where(eq(autoTradeLog.userId, userId))
+      .where(eq(autoTradeLog.portfolioId, portfolioId))
       .orderBy(desc(autoTradeLog.createdAt)).limit(50);
     return NextResponse.json({ settings, log });
   } catch (e) {
@@ -37,14 +34,12 @@ export async function GET() {
 
 export async function PATCH(req: NextRequest) {
   try {
-    const result = await getSessionUserId();
-    if ("error" in result) return result.error;
-    const { userId } = result;
-
-    await getOrCreate(userId);
+    const r = await requirePortfolio();
+    if ("error" in r) return r.error;
+    const { portfolioId } = r;
+    await getOrCreate(portfolioId);
     const body = await req.json();
     const updates: Record<string, unknown> = { updatedAt: new Date() };
-
     if (body.enabled !== undefined)         updates.enabled         = String(body.enabled);
     if (body.model !== undefined)           updates.model           = String(body.model);
     if (body.autoClose !== undefined)       updates.autoClose       = String(body.autoClose);
@@ -53,12 +48,10 @@ export async function PATCH(req: NextRequest) {
     if (body.minConfidence !== undefined)   updates.minConfidence   = Number(body.minConfidence);
     if (body.maxTradesPerDay !== undefined) updates.maxTradesPerDay = Number(body.maxTradesPerDay);
     if (body.maxPositionPct !== undefined)  updates.maxPositionPct  = Number(body.maxPositionPct);
-
     const [updated] = await db.update(autoTradeSettings)
-      .set(updates).where(eq(autoTradeSettings.userId, userId)).returning();
+      .set(updates).where(eq(autoTradeSettings.portfolioId, portfolioId)).returning();
     return NextResponse.json(updated);
   } catch (e) {
-    console.error("[auto-trade PATCH]", e);
     return NextResponse.json({ error: String(e) }, { status: 500 });
   }
 }

@@ -1,6 +1,5 @@
 import { sql } from "drizzle-orm";
 import {
-  boolean,
   doublePrecision,
   pgEnum,
   pgTable,
@@ -9,15 +8,11 @@ import {
   uuid,
 } from "drizzle-orm/pg-core";
 
-export const assetClassEnum = pgEnum("asset_class", [
-  "stock", "etf", "bond", "crypto", "option",
-]);
-export const signalDirectionEnum = pgEnum("signal_direction", [
-  "long", "short", "neutral",
-]);
-export const tradeDirEnum = pgEnum("trade_direction", ["long", "short"]);
-export const tradeStatusEnum = pgEnum("trade_status", ["open", "closed", "cancelled"]);
-export const accountTypeEnum = pgEnum("account_type", ["bank", "brokerage"]);
+export const assetClassEnum = pgEnum("asset_class", ["stock","etf","bond","crypto","option"]);
+export const signalDirectionEnum = pgEnum("signal_direction", ["long","short","neutral"]);
+export const tradeDirEnum = pgEnum("trade_direction", ["long","short"]);
+export const tradeStatusEnum = pgEnum("trade_status", ["open","closed","cancelled"]);
+export const accountTypeEnum = pgEnum("account_type", ["bank","brokerage"]);
 
 export const aiSignals = pgTable("ai_signals", {
   id: uuid("id").primaryKey().default(sql`gen_random_uuid()`),
@@ -35,10 +30,20 @@ export const aiSignals = pgTable("ai_signals", {
   createdAt: timestamp("created_at").notNull().defaultNow(),
 });
 
-// Each user gets their own bank + brokerage account row
+// Each Google user can have multiple named portfolios (paper or live)
+export const portfolios = pgTable("portfolios", {
+  id: uuid("id").primaryKey().default(sql`gen_random_uuid()`),
+  userId: text("user_id").notNull(),          // Google email
+  name: text("name").notNull(),               // "Main", "GPT-4o Test", "Live Alpaca"
+  mode: text("mode").notNull().default("paper"), // paper | live
+  broker: text("broker").notNull().default("alpaca"),
+  isDefault: text("is_default").notNull().default("false"),
+  createdAt: timestamp("created_at").notNull().defaultNow(),
+});
+
 export const accounts = pgTable("accounts", {
   id: uuid("id").primaryKey().default(sql`gen_random_uuid()`),
-  userId: text("user_id").notNull(),
+  portfolioId: uuid("portfolio_id").notNull().references(() => portfolios.id),
   name: text("name").notNull(),
   type: accountTypeEnum("type").notNull(),
   balance: doublePrecision("balance").notNull().default(0),
@@ -47,7 +52,7 @@ export const accounts = pgTable("accounts", {
 
 export const transfers = pgTable("transfers", {
   id: uuid("id").primaryKey().default(sql`gen_random_uuid()`),
-  userId: text("user_id").notNull(),
+  portfolioId: uuid("portfolio_id").notNull().references(() => portfolios.id),
   fromAccountId: uuid("from_account_id").notNull().references(() => accounts.id),
   toAccountId: uuid("to_account_id").notNull().references(() => accounts.id),
   amount: doublePrecision("amount").notNull(),
@@ -57,7 +62,7 @@ export const transfers = pgTable("transfers", {
 
 export const trades = pgTable("trades", {
   id: uuid("id").primaryKey().default(sql`gen_random_uuid()`),
-  userId: text("user_id").notNull(),
+  portfolioId: uuid("portfolio_id").notNull().references(() => portfolios.id),
   ticker: text("ticker").notNull(),
   assetClass: assetClassEnum("asset_class").notNull().default("stock"),
   direction: tradeDirEnum("direction").notNull(),
@@ -74,10 +79,9 @@ export const trades = pgTable("trades", {
   aiSignalId: uuid("ai_signal_id").references(() => aiSignals.id),
 });
 
-// Per-user auto-trade settings
 export const autoTradeSettings = pgTable("auto_trade_settings", {
   id: uuid("id").primaryKey().default(sql`gen_random_uuid()`),
-  userId: text("user_id").notNull(),
+  portfolioId: uuid("portfolio_id").notNull().references(() => portfolios.id),
   enabled: text("enabled").notNull().default("false"),
   model: text("model").notNull().default("openai"),
   minConfidence: doublePrecision("min_confidence").notNull().default(0.75),
@@ -93,7 +97,7 @@ export const autoTradeSettings = pgTable("auto_trade_settings", {
 
 export const autoTradeLog = pgTable("auto_trade_log", {
   id: uuid("id").primaryKey().default(sql`gen_random_uuid()`),
-  userId: text("user_id"),
+  portfolioId: uuid("portfolio_id").references(() => portfolios.id),
   action: text("action").notNull(),
   ticker: text("ticker"),
   tradeId: uuid("trade_id").references(() => trades.id),
@@ -101,6 +105,7 @@ export const autoTradeLog = pgTable("auto_trade_log", {
   createdAt: timestamp("created_at").notNull().defaultNow(),
 });
 
+export type Portfolio = typeof portfolios.$inferSelect;
 export type Trade = typeof trades.$inferSelect;
 export type NewTrade = typeof trades.$inferInsert;
 export type AISignal = typeof aiSignals.$inferSelect;

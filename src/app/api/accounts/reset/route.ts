@@ -1,23 +1,20 @@
 import { db } from "@/db";
-import { accounts, aiSignals, autoTradeLog, autoTradeSettings, trades, transfers } from "@/db/schema";
-import { getSessionUserId } from "@/lib/session";
+import { accounts, autoTradeLog, autoTradeSettings, trades, transfers } from "@/db/schema";
+import { requirePortfolio } from "@/lib/portfolio";
 import { eq } from "drizzle-orm";
 import { NextResponse } from "next/server";
 
 export async function POST() {
-  const result = await getSessionUserId();
-  if ("error" in result) return result.error;
-  const { userId } = result;
+  const r = await requirePortfolio();
+  if ("error" in r) return r.error;
+  const { portfolioId } = r;
 
-  // Delete in FK-safe order, scoped to this user only
-  await db.delete(autoTradeLog).where(eq(autoTradeLog.userId, userId));
-  await db.delete(transfers).where(eq(transfers.userId, userId));
-  await db.delete(trades).where(eq(trades.userId, userId));
-  // Keep ai_signals — they're shared reference data, not user-specific
-
-  await db.update(accounts).set({ balance: 0 }).where(eq(accounts.userId, userId));
+  await db.delete(autoTradeLog).where(eq(autoTradeLog.portfolioId, portfolioId));
+  await db.delete(transfers).where(eq(transfers.portfolioId, portfolioId));
+  await db.delete(trades).where(eq(trades.portfolioId, portfolioId));
+  await db.update(accounts).set({ balance: 0 }).where(eq(accounts.portfolioId, portfolioId));
   await db.update(autoTradeSettings).set({ lastRunAt: null, lastRunSummary: null })
-    .where(eq(autoTradeSettings.userId, userId));
+    .where(eq(autoTradeSettings.portfolioId, portfolioId));
 
   return NextResponse.json({ success: true });
 }
