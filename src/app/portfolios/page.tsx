@@ -91,9 +91,9 @@ export default async function PortfoliosPage() {
     return b.totalValue - a.totalValue;
   });
 
-  // Upsert today's snapshot for every portfolio
+  // Upsert today's snapshot — fire-and-forget so a DB timeout can't crash the page
   const today = todayET();
-  await Promise.all(
+  Promise.all(
     cards.map(card =>
       db.insert(portfolioSnapshots)
         .values({ portfolioId: card.id, date: today, totalValue: card.totalValue })
@@ -101,8 +101,9 @@ export default async function PortfoliosPage() {
           target: [portfolioSnapshots.portfolioId, portfolioSnapshots.date],
           set: { totalValue: card.totalValue, updatedAt: new Date() },
         })
+        .catch(() => { /* snapshot failure is non-fatal */ })
     )
-  );
+  ).catch(() => {});
 
   // Return % helper: find the most recent snapshot on or before N days ago
   function returnPct(portfolioId: string, daysAgo: number, current: number): number | null {

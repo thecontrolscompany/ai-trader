@@ -37,14 +37,15 @@ export async function GET() {
   }, 0);
   const totalValue = cash + invested;
 
-  // Upsert today's snapshot
+  // Upsert today's snapshot — non-fatal if it fails
   const today = todayET();
-  await db.insert(portfolioSnapshots)
+  db.insert(portfolioSnapshots)
     .values({ portfolioId, date: today, totalValue })
     .onConflictDoUpdate({
       target: [portfolioSnapshots.portfolioId, portfolioSnapshots.date],
       set: { totalValue, updatedAt: new Date() },
-    });
+    })
+    .catch(() => {});
 
   function getPct(daysAgo: number): number | null {
     const cutoff = daysAgoET(daysAgo);
