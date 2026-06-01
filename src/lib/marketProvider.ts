@@ -1,6 +1,7 @@
-// Market data provider — Tradier API (developer: delayed quotes; brokerage account: real-time).
-// To go live with real-time quotes: fund a Tradier brokerage account and update TRADIER_API_KEY
-// with the brokerage account token — no code changes needed.
+// Market data provider.
+// Primary: Tradier (developer = 15-min delayed; brokerage account = real-time).
+// Fallback: Yahoo Finance v8 (no auth required, used if Tradier returns no data).
+// To go live: fund a Tradier brokerage account, swap TRADIER_API_KEY — no code changes.
 
 import type { MarketQuote } from "./types";
 
@@ -27,15 +28,17 @@ async function fetchTradierQuotes(tickers: string[]): Promise<Map<string, Market
   const raw = data?.quotes?.quote;
   if (!raw) return new Map();
 
-  // Tradier returns an object for a single ticker, array for multiple
   const quotes: unknown[] = Array.isArray(raw) ? raw : [raw];
 
   const map = new Map<string, MarketQuote>();
   for (const item of quotes) {
     const q = item as Record<string, unknown>;
     const sym = q.symbol as string | undefined;
-    const price = q.last as number | null;
-    if (!sym || price == null) continue;
+    if (!sym) continue;
+
+    // "last" is null when market is closed — fall back to close, then prevclose
+    const price = (q.last ?? q.close ?? q.prevclose) as number | null;
+    if (price == null) continue;
 
     const previousClose = (q.prevclose as number) ?? price;
     const change = (q.change as number) ?? price - previousClose;
@@ -49,16 +52,59 @@ async function fetchTradierQuotes(tickers: string[]): Promise<Map<string, Market
       changePct,
       currency: "USD",
       exchangeName: (q.exch as string) ?? "",
-      marketState: price != null ? "REGULAR" : "CLOSED",
+      marketState: q.last != null ? "REGULAR" : "CLOSED",
     });
   }
   return map;
 }
 
+// Yahoo Finance v8 — no auth, used as fallback when Tradier returns nothing
+async function fetchYahooV8Quote(ticker: string): Promise<MarketQuote | null> {
+  const sym = ticker.toUpperCase();
+  const res = await fetch(
+    `https://query1.finance.yahoo.com/v8/finance/chart/${sym}?interval=1d&range=1d`,
+    { headers: { "User-Agent": "Mozilla/5.0" }, next: { revalidate: 60 } }
+  );
+  if (!res.ok) return null;
+
+  const data = await res.json();
+  const meta = data?.chart?.result?.[0]?.meta;
+  if (!meta || typeof meta.regularMarketPrice !== "number") return null;
+
+  const price = meta.regularMarketPrice as number;
+  const previousClose = (meta.chartPreviousClose ?? meta.previousClose ?? price) as number;
+  const change = price - previousClose;
+  const changePct = previousClose > 0 ? (change / previousClose) * 100 : 0;
+
+  return {
+    ticker: sym,
+    price,
+    previousClose,
+    change,
+    changePct,
+    currency: (meta.currency as string) ?? "USD",
+    exchangeName: (meta.exchangeName as string) ?? "",
+    marketState: (meta.marketState as string) ?? "",
+  };
+}
+
 export async function getQuotes(tickers: string[]): Promise<Map<string, MarketQuote>> {
   if (tickers.length === 0) return new Map();
   try {
-    return await fetchTradierQuotes(tickers);
+    const map = await fetchTradierQuotes(tickers);
+
+    // Fill any missing tickers from Yahoo Finance v8
+    const missing = tickers.filter((t) => !map.has(t.toUpperCase()));
+    if (missing.length > 0) {
+      const fallbacks = await Promise.allSettled(missing.map(fetchYahooV8Quote));
+      fallbacks.forEach((result, i) => {
+        if (result.status === "fulfilled" && result.value) {
+          map.set(missing[i].toUpperCase(), result.value);
+        }
+      });
+    }
+
+    return map;
   } catch {
     return new Map();
   }
