@@ -1,6 +1,7 @@
 import type { Metadata } from "next";
 import { Geist } from "next/font/google";
 import { auth } from "@/auth";
+import { isAdmin } from "@/lib/admin";
 import { getActivePortfolio } from "@/lib/portfolio";
 import BottomNav from "@/components/BottomNav";
 import MarketStatusBar from "@/components/MarketStatusBar";
@@ -18,6 +19,7 @@ export const metadata: Metadata = {
 export default async function RootLayout({ children }: { children: React.ReactNode }) {
   const session = await auth();
   const isLoggedIn = !!session?.user;
+  const userIsAdmin = isAdmin(session?.user?.email);
   const portfolio = isLoggedIn ? await getActivePortfolio() : null;
 
   return (
@@ -27,6 +29,7 @@ export default async function RootLayout({ children }: { children: React.ReactNo
         <MarketStatusBar />
         <NavBar
           isLoggedIn={isLoggedIn}
+          isAdmin={userIsAdmin}
           userName={session?.user?.name}
           userImage={session?.user?.image}
           activePortfolioId={portfolio?.id ?? null}
@@ -36,7 +39,7 @@ export default async function RootLayout({ children }: { children: React.ReactNo
         <main className="max-w-6xl mx-auto px-4 py-6 pb-20 md:pb-6">
           {children}
         </main>
-        <BottomNav isLoggedIn={isLoggedIn} />
+        <BottomNav isLoggedIn={isLoggedIn} isAdmin={userIsAdmin} />
       </body>
     </html>
   );

@@ -5,18 +5,26 @@ import { usePathname } from "next/navigation";
 
 interface Props { isLoggedIn: boolean; }
 
+interface Props { isLoggedIn: boolean; isAdmin?: boolean; }
+
 const publicTabs = [
   { href: "/",        label: "Markets",  icon: "📈" },
 ];
 
-const privateTabs = [
+const adminTabs = [
   { href: "/scan",      label: "AI Scan",   icon: "🤖" },
   { href: "/accounts",  label: "Portfolio", icon: "💼" },
   { href: "/trades",    label: "Trades",    icon: "📋" },
 ];
 
-export default function BottomNav({ isLoggedIn }: Props) {
+const userTabs = [
+  { href: "/accounts",  label: "Portfolio", icon: "💼" },
+  { href: "/trades",    label: "Trades",    icon: "📋" },
+];
+
+export default function BottomNav({ isLoggedIn, isAdmin = false }: Props) {
   const pathname = usePathname();
+  const privateTabs = isAdmin ? adminTabs : userTabs;
   const tabs = isLoggedIn ? [...publicTabs, ...privateTabs] : publicTabs;
 
   function isActive(href: string) {

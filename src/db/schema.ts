@@ -14,6 +14,20 @@ export const tradeDirEnum = pgEnum("trade_direction", ["long","short"]);
 export const tradeStatusEnum = pgEnum("trade_status", ["open","closed","cancelled"]);
 export const accountTypeEnum = pgEnum("account_type", ["bank","brokerage"]);
 
+// AI model configurations — admin manages these, active model is used by all portfolios
+export const aiModels = pgTable("ai_models", {
+  id: uuid("id").primaryKey().default(sql`gen_random_uuid()`),
+  name: text("name").notNull(),                          // "GPT-4o Standard", "Claude Sonnet", "Experimental v2"
+  provider: text("provider").notNull().default("openai"), // openai | claude
+  modelId: text("model_id").notNull().default("gpt-4o"),  // actual model identifier
+  customPrompt: text("custom_prompt"),                    // optional override for system prompt
+  status: text("status").notNull().default("testing"),    // active | testing | retired
+  paperOnly: text("paper_only").notNull().default("true"), // test models are paper-only
+  notes: text("notes"),
+  createdAt: timestamp("created_at").notNull().defaultNow(),
+  updatedAt: timestamp("updated_at").notNull().defaultNow(),
+});
+
 export const aiSignals = pgTable("ai_signals", {
   id: uuid("id").primaryKey().default(sql`gen_random_uuid()`),
   ticker: text("ticker").notNull(),

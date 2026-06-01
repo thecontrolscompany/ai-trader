@@ -12,22 +12,28 @@ const publicLinks = [
   { href: "/", label: "Top 100" },
 ];
 
-// Only shown when logged in
-const privateLinks = [
-  { href: "/scan",         label: "AI Scan" },
-  { href: "/auto-trade",   label: "Auto Trade" },
+// Shown to all logged-in users
+const userLinks = [
   { href: "/accounts",     label: "Portfolio" },
   { href: "/trades",       label: "My Trades" },
+];
+
+// Admin-only links
+const adminLinks = [
+  { href: "/scan",         label: "AI Scan" },
+  { href: "/auto-trade",   label: "Auto Trade" },
   { href: "/trades/new",   label: "+ New Trade" },
 ];
 
-// Buried — desktop only, in hamburger menu on mobile
+// Buried — admin only
 const researchLinks = [
   { href: "/activity",     label: "Activity Log" },
+  { href: "/admin/models", label: "AI Models" },
 ];
 
 interface Props {
   isLoggedIn: boolean;
+  isAdmin?: boolean;
   userName?: string | null;
   userImage?: string | null;
   activePortfolioId?: string | null;
@@ -35,7 +41,7 @@ interface Props {
   portfolioMode?: string | null;
 }
 
-export default function NavBar({ isLoggedIn, userName, userImage, activePortfolioId }: Props) {
+export default function NavBar({ isLoggedIn, isAdmin = false, userName, userImage, activePortfolioId }: Props) {
   const pathname = usePathname();
   const [open, setOpen] = useState(false);
 
@@ -44,7 +50,9 @@ export default function NavBar({ isLoggedIn, userName, userImage, activePortfoli
     return pathname.startsWith(href);
   }
 
-  const visibleLinks = isLoggedIn ? [...publicLinks, ...privateLinks] : publicLinks;
+  const visibleLinks = isLoggedIn
+    ? [...publicLinks, ...userLinks, ...(isAdmin ? adminLinks : [])]
+    : publicLinks;
   const firstName = userName?.split(" ")[0] ?? null;
 
   return (
@@ -83,8 +91,8 @@ export default function NavBar({ isLoggedIn, userName, userImage, activePortfoli
             </Link>
           ))}
 
-          {/* Research links — desktop, buried */}
-          {isLoggedIn && researchLinks.map((l) => (
+          {/* Research links — admin only, buried */}
+          {isLoggedIn && isAdmin && researchLinks.map((l) => (
             <Link key={l.href} href={l.href}
               className="px-2 py-1.5 rounded-lg text-xs font-medium text-muted-foreground/60 hover:text-muted-foreground hover:bg-accent transition-colors whitespace-nowrap">
               {l.label}
@@ -154,8 +162,8 @@ export default function NavBar({ isLoggedIn, userName, userImage, activePortfoli
             </Link>
           ))}
 
-          {/* Research links — buried at bottom */}
-          {isLoggedIn && researchLinks.map((l) => (
+          {/* Research links — admin only, buried at bottom */}
+          {isLoggedIn && isAdmin && researchLinks.map((l) => (
             <Link key={l.href} href={l.href} onClick={() => setOpen(false)}
               className="px-4 py-2 rounded-xl text-xs font-medium text-muted-foreground hover:text-foreground hover:bg-accent transition-colors">
               {l.label}
