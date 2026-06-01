@@ -42,12 +42,21 @@ export default function AccountsPage() {
   // Deploy Capital flow
   type DeployState = "idle" | "scanning" | "preview" | "executing" | "done";
   const [deployState, setDeployState] = useState<DeployState>("idle");
-  const [deployModel, setDeployModel] = useState<"openai" | "claude">("openai");
+  // null = active model, "combined" = run all models + merge, string = specific model config ID
+  const [deployModelId, setDeployModelId] = useState<string | null>(null);
+  const [dbModels, setDbModels] = useState<{id: string; name: string; status: string; paperOnly: string}[]>([]);
   const [deployPreview, setDeployPreview] = useState<{
-    balance: number; totalInvest: number; picks: DeployPick[]; summary: string;
+    balance: number; totalInvest: number; picks: DeployPick[]; summary: string; model?: string;
   } | null>(null);
   const [deployResult, setDeployResult] = useState<{ opened: string[]; errors: string[] } | null>(null);
   const [deployError, setDeployError] = useState<string | null>(null);
+
+  useEffect(() => {
+    fetch("/api/admin/models")
+      .then(r => r.ok ? r.json() : [])
+      .then(models => { if (Array.isArray(models)) setDbModels(models); })
+      .catch(() => {});
+  }, []);
 
   async function runDeployPreview() {
     setDeployState("scanning");
@@ -55,10 +64,16 @@ export default function AccountsPage() {
     setDeployPreview(null);
     setDeployResult(null);
     try {
+      const body = deployModelId === "combined"
+        ? { action: "preview", model: "compare" }         // run both + merge
+        : deployModelId
+          ? { action: "preview", modelConfigId: deployModelId }  // specific test model
+          : { action: "preview", model: "active" };              // active model from DB
+
       const res = await fetch("/api/deploy", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ action: "preview", model: deployModel }),
+        body: JSON.stringify(body),
       });
       const data = await res.json();
       if (!res.ok) { setDeployError(data.error); setDeployState("idle"); return; }
@@ -247,14 +262,37 @@ export default function AccountsPage() {
               AI will scan the market and invest your <span className="text-foreground font-semibold">{fmt(brokerage?.balance ?? 0)}</span> idle brokerage cash across the best picks it finds. Already-held stocks are skipped.
             </p>
           </div>
-          <div className="flex items-center gap-2">
-            <span className="text-xs text-muted-foreground">AI model:</span>
-            {(["openai", "claude"] as const).map((m) => (
-              <button key={m} onClick={() => setDeployModel(m)}
-                className={`text-xs px-3 py-1 rounded-lg border transition-colors ${deployModel === m ? "border-primary bg-primary/15 text-primary font-semibold" : "border-border text-muted-foreground hover:border-muted-foreground"}`}>
-                {m === "openai" ? "GPT-4o" : "Claude"}
+          <div className="flex flex-wrap items-center gap-2">
+            <span className="text-xs text-muted-foreground shrink-0">Model:</span>
+
+            {/* Active model (default) */}
+            {(() => {
+              const active = dbModels.find(m => m.status === "active");
+              return (
+                <button onClick={() => setDeployModelId(null)}
+                  className={`text-xs px-3 py-1.5 rounded-lg border flex items-center gap-1.5 transition-colors ${deployModelId === null ? "border-primary bg-primary/15 text-primary font-semibold" : "border-border text-muted-foreground hover:border-muted-foreground"}`}>
+                  <span className="w-1.5 h-1.5 rounded-full bg-green-400" />
+                  {active?.name ?? "Active Model"}
+                </button>
+              );
+            })()}
+
+            {/* Test models (admin only) */}
+            {dbModels.filter(m => m.status === "testing").map(m => (
+              <button key={m.id} onClick={() => setDeployModelId(m.id)}
+                className={`text-xs px-3 py-1.5 rounded-lg border flex items-center gap-1.5 transition-colors ${deployModelId === m.id ? "border-yellow-400 bg-yellow-400/15 text-yellow-400 font-semibold" : "border-border text-muted-foreground hover:border-yellow-400/50"}`}>
+                <span className="w-1.5 h-1.5 rounded-full bg-yellow-400" />
+                {m.name} <span className="opacity-60">test</span>
               </button>
             ))}
+
+            {/* Combined — if multiple models available */}
+            {dbModels.length >= 2 && (
+              <button onClick={() => setDeployModelId("combined")}
+                className={`text-xs px-3 py-1.5 rounded-lg border flex items-center gap-1.5 transition-colors ${deployModelId === "combined" ? "border-primary bg-primary/15 text-primary font-semibold" : "border-border text-muted-foreground hover:border-muted-foreground"}`}>
+                ✦ Combined
+              </button>
+            )}
           </div>
           <button onClick={runDeployPreview}
             className="w-full rounded-xl bg-primary text-primary-foreground py-3 font-black text-base hover:opacity-90 transition-opacity">
@@ -275,7 +313,10 @@ export default function AccountsPage() {
       {deployState === "preview" && deployPreview && (
         <div className="rounded-2xl border-2 border-primary/40 bg-card p-5 space-y-4">
           <div>
-            <p className="font-black text-lg">📋 Deployment Plan</p>
+            <div className="flex items-center gap-2">
+              <p className="font-black text-lg">📋 Deployment Plan</p>
+              {deployPreview?.model && <span className="text-xs text-muted-foreground border border-border rounded-lg px-2 py-0.5">{deployPreview.model}</span>}
+            </div>
             <p className="text-sm text-muted-foreground mt-0.5">{deployPreview.summary}</p>
           </div>
           <p className="text-sm">
