@@ -65,11 +65,12 @@ export function buildUserPrompt(
 
   const history = historicalContext
     ? [
-        "Historical performance from our own paper trades:",
+        "=== PERFORMANCE FEEDBACK — read this carefully before picking ===",
         historicalContext.summary,
-        ...historicalContext.highlights.map((line) => `- ${line}`),
+        ...historicalContext.highlights,
+        "=== END FEEDBACK ===",
       ].join("\n")
-    : "Historical performance from our own paper trades:\n- No historical context available.";
+    : "=== PERFORMANCE FEEDBACK ===\nNo historical context available.\n=== END FEEDBACK ===";
 
   return `You are scanning ${stocks.length} stocks to find 6-10 opportunities — prioritizing DIAMONDS IN THE ROUGH over well-known names.
 
@@ -134,10 +135,10 @@ riskLevel rules:
 
 export async function callClaude(stocks: StockRow[], customSystemPrompt?: string): Promise<RawScanResult> {
   const client = new Anthropic({ apiKey: process.env.ANTHROPIC_API_KEY });
-  const historicalContext = await getHistoricalScanContext();
   const universe = stocks.length > 0 && hasTrendFields(stocks[0])
     ? stocks as EnrichedStockRow[]
     : await enrichStockUniverse(stocks, 40);
+  const historicalContext = await getHistoricalScanContext(universe);
   const prompt = buildUserPrompt(universe, "Claude Sonnet 4.6", historicalContext);
   const systemText = customSystemPrompt ?? SYSTEM_PROMPT;
   const response = await client.messages.create({
@@ -161,10 +162,10 @@ export async function callClaude(stocks: StockRow[], customSystemPrompt?: string
 
 export async function callOpenAI(stocks: StockRow[], customSystemPrompt?: string): Promise<RawScanResult> {
   const client = new OpenAI({ apiKey: process.env.OPENAI_API_KEY });
-  const historicalContext = await getHistoricalScanContext();
   const universe = stocks.length > 0 && hasTrendFields(stocks[0])
     ? stocks as EnrichedStockRow[]
     : await enrichStockUniverse(stocks, 40);
+  const historicalContext = await getHistoricalScanContext(universe);
   const prompt = buildUserPrompt(universe, "GPT-4o", historicalContext);
   const systemText = customSystemPrompt ?? SYSTEM_PROMPT;
   const response = await client.chat.completions.create({
