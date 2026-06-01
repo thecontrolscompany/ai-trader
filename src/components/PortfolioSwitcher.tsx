@@ -8,10 +8,12 @@ interface Props { activeId: string | null; }
 export default function PortfolioSwitcher({ activeId }: Props) {
   const [portfolios, setPortfolios] = useState<Portfolio[]>([]);
   const [open, setOpen] = useState(false);
+  const [openUpward, setOpenUpward] = useState(false);
   const [creating, setCreating] = useState(false);
   const [newName, setNewName] = useState("");
   const [newMode, setNewMode] = useState("paper");
   const ref = useRef<HTMLDivElement>(null);
+  const buttonRef = useRef<HTMLButtonElement>(null);
 
   useEffect(() => {
     fetch("/api/portfolios").then(r => r.json()).then(d => setPortfolios(d.portfolios ?? []));
@@ -46,7 +48,13 @@ export default function PortfolioSwitcher({ activeId }: Props) {
 
   return (
     <div ref={ref} className="relative">
-      <button onClick={() => setOpen(o => !o)}
+      <button ref={buttonRef} onClick={() => {
+          if (!open && buttonRef.current) {
+            const rect = buttonRef.current.getBoundingClientRect();
+            setOpenUpward(window.innerHeight - rect.bottom < 320);
+          }
+          setOpen(o => !o);
+        }}
         className="flex items-center gap-1.5 px-2 py-1 rounded-lg hover:bg-accent transition-colors text-xs">
         <span className={`w-1.5 h-1.5 rounded-full ${active?.mode === "live" ? "bg-green-400" : "bg-yellow-400"}`} />
         <span className="font-semibold max-w-[100px] truncate">{active?.name ?? "Portfolio"}</span>
@@ -54,7 +62,7 @@ export default function PortfolioSwitcher({ activeId }: Props) {
       </button>
 
       {open && (
-        <div className="absolute right-0 top-full mt-1 w-52 rounded-xl border border-border bg-card shadow-lg z-50 overflow-hidden">
+        <div className={`absolute right-0 w-52 rounded-xl border border-border bg-card shadow-lg z-50 overflow-hidden ${openUpward ? "bottom-full mb-1" : "top-full mt-1"}`}>
           <div className="px-3 py-2 border-b border-border">
             <p className="text-xs text-muted-foreground uppercase tracking-wide font-semibold">Portfolios</p>
           </div>
