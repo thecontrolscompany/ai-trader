@@ -1,6 +1,7 @@
 "use client";
 
 import { useEffect, useMemo, useState } from "react";
+import { useSearchParams } from "next/navigation";
 import { Badge } from "@/components/ui/badge";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import type { RiskLevel, ScanModel, ScanResult } from "@/app/api/scan/route";
@@ -132,6 +133,9 @@ function OpenTradePanel({
 }
 
 export default function ScanPage() {
+  const searchParams = useSearchParams();
+  const portfolioKey = searchParams.get("p") ?? "default";
+
   // selectedModelConfigId: null = use active model from DB, otherwise a specific test model ID
   const [selectedModelConfigId, setSelectedModelConfigId] = useState<string | null>(null);
   const [dbModels, setDbModels] = useState<DBModel[]>([]);
@@ -153,13 +157,14 @@ export default function ScanPage() {
         if (brokerage) setBrokerageBalance(brokerage.balance);
       })
       .catch(() => {});
+    // Reset scan result when portfolio switches
+    setResult(null);
 
-    // Load models from DB (admin only endpoint — gracefully ignored if 403)
     fetch("/api/admin/models")
       .then((r) => r.ok ? r.json() : [])
       .then((models) => { if (Array.isArray(models)) setDbModels(models); })
       .catch(() => {});
-  }, []);
+  }, [portfolioKey]);
 
   async function runScan() {
     setLoading(true);

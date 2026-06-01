@@ -31,6 +31,8 @@ export default function PortfolioSwitcher({ activeId }: Props) {
   async function switchTo(id: string) {
     await fetch("/api/portfolios/switch", { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ portfolioId: id }) });
     setOpen(false);
+    // Use replace with a cache-busting param so client components fully remount
+    router.replace(`?p=${id.slice(0, 8)}`);
     router.refresh();
   }
 

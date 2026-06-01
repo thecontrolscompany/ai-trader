@@ -1,6 +1,7 @@
 "use client";
 
 import { useEffect, useState, useCallback } from "react";
+import { useSearchParams } from "next/navigation";
 import type { DeployPick } from "@/app/api/deploy/route";
 
 interface Account { id: string; name: string; type: "bank" | "brokerage"; balance: number; }
@@ -26,6 +27,10 @@ function pct(n: number) {
 }
 
 export default function AccountsPage() {
+  // The ?p= param changes on portfolio switch, forcing this component to re-fetch
+  const searchParams = useSearchParams();
+  const portfolioKey = searchParams.get("p") ?? "default";
+
   const [accounts, setAccounts]   = useState<Account[]>([]);
   const [transfers, setTransfers] = useState<Transfer[]>([]);
   const [positions, setPositions] = useState<Position[]>([]);
@@ -145,7 +150,15 @@ export default function AccountsPage() {
     }
   }, []);
 
-  useEffect(() => { load(); loadPositions(); }, [load, loadPositions]);
+  // Re-fetch whenever portfolioKey changes (portfolio switch sets ?p=ID)
+  useEffect(() => {
+    setAccounts([]);
+    setTransfers([]);
+    setPositions([]);
+    setLoading(true);
+    load();
+    loadPositions();
+  }, [load, loadPositions, portfolioKey]);
 
   const bank      = accounts.find((a) => a.type === "bank");
   const brokerage = accounts.find((a) => a.type === "brokerage");
