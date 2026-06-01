@@ -8,7 +8,7 @@ export const RUN_WINDOWS: Record<string, Array<[number, number]>> = {
   "1x": [[9, 30]],
   "2x": [[9, 30], [13, 30]],
   "3x": [[9, 30], [11, 30], [13, 30]],
-  "4x": [[9, 30], [11, 30], [13, 30], [15, 0]],
+  "4x": [[9, 30], [11, 30], [13, 30], [15, 30]],
 };
 
 export function getEasternTime(now = new Date()): EasternTime {
