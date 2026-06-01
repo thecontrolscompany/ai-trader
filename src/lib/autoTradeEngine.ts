@@ -115,7 +115,26 @@ export async function runAutoTradeForPortfolio(portfolioId: string, force = fals
   try {
     const stocks = await fetchTopStocks();
     const { callClaude, callOpenAI } = await import("@/lib/scanHelpers");
-    picks = settings.model === "claude" ? await callClaude(stocks) : await callOpenAI(stocks);
+    if (settings.model === "compare") {
+      // Run both models, merge picks — dedup by symbol keeping highest confidence
+      const [claudeResult, openaiResult] = await Promise.all([callClaude(stocks), callOpenAI(stocks)]);
+      const allPicks = [...(claudeResult.picks ?? []), ...(openaiResult.picks ?? [])];
+      const bySymbol = new Map<string, Record<string, unknown>>();
+      for (const p of allPicks) {
+        const sym = String(p.symbol ?? "");
+        const existing = bySymbol.get(sym);
+        if (!existing || Number(p.confidence ?? 0) > Number(existing.confidence ?? 0)) {
+          bySymbol.set(sym, p);
+        }
+      }
+      picks = {
+        model: "Claude + GPT-4o",
+        picks: [...bySymbol.values()],
+        estimatedCostUsd: (claudeResult.estimatedCostUsd ?? 0) + (openaiResult.estimatedCostUsd ?? 0),
+      };
+    } else {
+      picks = settings.model === "claude" ? await callClaude(stocks) : await callOpenAI(stocks);
+    }
   } catch (e) {
     result.errors.push(`AI scan failed: ${e}`);
     result.summary = "AI scan failed — check API keys.";
@@ -143,9 +162,9 @@ export async function runAutoTradeForPortfolio(portfolioId: string, force = fals
     const perSlot = deployMode === "fixed" ? available * settings.maxPositionPct : available / slots;
     let entryPrice = Number(pick.entryZoneLow);
     try {
-      const qj = await (await fetch(`https://query1.finance.yahoo.com/v7/finance/quote?symbols=${pick.symbol}`, { headers: { "User-Agent": "Mozilla/5.0" } })).json();
-      const live = qj?.quoteResponse?.result?.[0]?.regularMarketPrice;
-      if (live) entryPrice = Number(live);
+      const { getQuote } = await import("@/lib/marketProvider");
+      const q = await getQuote(String(pick.symbol));
+      if (q?.price) entryPrice = q.price;
     } catch { /* keep AI price */ }
     const invest = Math.min(perSlot, available);
     const qty = calcShares(invest, entryPrice);
@@ -164,7 +183,7 @@ export async function runAutoTradeForPortfolio(portfolioId: string, force = fals
       await db.update(accounts).set({ balance: available }).where(eq(accounts.id, brokerageId));
       await logAction(portfolioId, "opened", String(pick.symbol), tradeId, `Confidence ${(Number(pick.confidence) * 100).toFixed(0)}% · ${pick.riskLevel ?? "moderate"} · $${invest.toFixed(2)}`);
       openTickers.add(String(pick.symbol));
-      result.opened.push(`${pick.symbol} — ${qty.toFixed(4)} @ $${entryPrice.toFixed(2)} ($${invest.toFixed(2)})`);
+      result.opened.push(`${pick.symbol} — ${qty} shares @ $${entryPrice.toFixed(2)} ($${(qty * entryPrice).toFixed(2)})`);
       remaining--;
     } catch (e) { slots = Math.max(1, slots - 1); result.errors.push(`Open ${pick.symbol}: ${e}`); }
   }

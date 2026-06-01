@@ -160,11 +160,15 @@ export default function AutoTradePage() {
           {/* AI Model */}
           <div>
             <label className="text-xs text-muted-foreground uppercase tracking-wide font-semibold block mb-2">AI Model</label>
-            <div className="grid grid-cols-2 gap-2">
-              {["openai", "claude"].map((m) => (
-                <button key={m} onClick={() => save({ model: m })}
-                  className={`rounded-xl border-2 py-2.5 text-sm font-bold capitalize transition-colors ${settings.model === m ? "border-primary bg-primary/10" : "border-border text-muted-foreground hover:border-muted-foreground"}`}>
-                  {m === "openai" ? "GPT-4o" : "Claude Sonnet"}
+            <div className="grid grid-cols-3 gap-2">
+              {[
+                { value: "claude",  label: "Claude" },
+                { value: "openai",  label: "GPT-4o" },
+                { value: "compare", label: "Both ✦" },
+              ].map((m) => (
+                <button key={m.value} onClick={() => save({ model: m.value })}
+                  className={`rounded-xl border-2 py-2.5 text-sm font-bold transition-colors ${settings.model === m.value ? "border-primary bg-primary/10" : "border-border text-muted-foreground hover:border-muted-foreground"}`}>
+                  {m.label}
                 </button>
               ))}
             </div>
