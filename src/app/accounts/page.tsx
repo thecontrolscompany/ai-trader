@@ -239,12 +239,12 @@ export default function AccountsPage() {
       </div>
 
       {/* ── Deploy Capital ── */}
-      {(brokerage?.balance ?? 0) >= 1 && positions.length === 0 && deployState === "idle" && (
+      {(brokerage?.balance ?? 0) >= 1 && deployState === "idle" && (
         <div className="rounded-2xl border-2 border-primary/40 bg-primary/5 p-5 space-y-3">
           <div>
             <p className="font-black text-lg">🚀 Deploy Capital</p>
             <p className="text-sm text-muted-foreground mt-0.5">
-              AI will scan the market and invest your <span className="text-foreground font-semibold">{fmt(brokerage?.balance ?? 0)}</span> brokerage balance across the best picks it finds.
+              AI will scan the market and invest your <span className="text-foreground font-semibold">{fmt(brokerage?.balance ?? 0)}</span> idle brokerage cash across the best picks it finds. Already-held stocks are skipped.
             </p>
           </div>
           <div className="flex items-center gap-2">
