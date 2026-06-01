@@ -21,6 +21,7 @@ const ACTION_COLOR: Record<string, string> = {
 
 export default function AutoTradePage() {
   const [settings, setSettings] = useState<Settings | null>(null);
+  const [portfolioName, setPortfolioName] = useState<string | null>(null);
   const [loadError, setLoadError] = useState<string | null>(null);
   const [log, setLog] = useState<LogEntry[]>([]);
   const [saving, setSaving] = useState(false);
@@ -33,7 +34,9 @@ export default function AutoTradePage() {
 
   async function load() {
     try {
-      const res = await fetch("/api/auto-trade");
+      const controller = new AbortController();
+      const timeout = setTimeout(() => controller.abort(), 10000);
+      const res = await fetch("/api/auto-trade", { signal: controller.signal }).finally(() => clearTimeout(timeout));
       if (!res.ok) {
         let msg = `Server error ${res.status}`;
         try { const d = await res.json(); if (d.error) msg = d.error; } catch { /* ignore */ }
@@ -43,8 +46,10 @@ export default function AutoTradePage() {
       if (!data.settings) { setLoadError("Settings not returned from server"); return; }
       setSettings(data.settings);
       setLog(data.log ?? []);
-    } catch (e) {
-      setLoadError(`Network error: ${e}`);
+      if (data.portfolioName) setPortfolioName(data.portfolioName);
+    } catch (e: unknown) {
+      const isAbort = e instanceof Error && e.name === "AbortError";
+      setLoadError(isAbort ? "Request timed out — try reloading the page" : `Network error: ${e}`);
     }
   }
   useEffect(() => {
@@ -112,9 +117,17 @@ export default function AutoTradePage() {
   return (
     <div className="space-y-6 max-w-xl">
       <div>
-        <h1 className="text-2xl font-black tracking-tight">Auto Trading</h1>
+        <div className="flex items-center gap-3">
+          <h1 className="text-2xl font-black tracking-tight">Auto Trading</h1>
+          {portfolioName && (
+            <span className="text-sm font-semibold px-2.5 py-1 rounded-lg bg-primary/15 text-primary">
+              {portfolioName}
+            </span>
+          )}
+        </div>
         <p className="text-muted-foreground text-sm mt-1">
           AI scans and trades automatically on your behalf. <span className="text-yellow-400 font-semibold">Paper trades only — no real money.</span>
+          {portfolioName && <span className="text-muted-foreground"> Switch portfolios in the nav to configure a different one.</span>}
         </p>
       </div>
 

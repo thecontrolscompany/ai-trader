@@ -1,5 +1,5 @@
 import { db } from "@/db";
-import { autoTradeLog, autoTradeSettings } from "@/db/schema";
+import { autoTradeLog, autoTradeSettings, portfolios } from "@/db/schema";
 import { requirePortfolio } from "@/lib/portfolio";
 import { newId } from "@/lib/id";
 import { eq, desc } from "drizzle-orm";
@@ -21,11 +21,15 @@ export async function GET() {
     const r = await requirePortfolio();
     if ("error" in r) return r.error;
     const { portfolioId } = r;
-    const settings = await getOrCreate(portfolioId);
-    const log = await db.select().from(autoTradeLog)
-      .where(eq(autoTradeLog.portfolioId, portfolioId))
-      .orderBy(desc(autoTradeLog.createdAt)).limit(50);
-    return NextResponse.json({ settings, log });
+    const [settings, log, portfolioRow] = await Promise.all([
+      getOrCreate(portfolioId),
+      db.select().from(autoTradeLog)
+        .where(eq(autoTradeLog.portfolioId, portfolioId))
+        .orderBy(desc(autoTradeLog.createdAt)).limit(50),
+      db.select({ name: portfolios.name }).from(portfolios)
+        .where(eq(portfolios.id, portfolioId)).limit(1),
+    ]);
+    return NextResponse.json({ settings, log, portfolioName: portfolioRow[0]?.name ?? null });
   } catch (e) {
     console.error("[auto-trade GET]", e);
     return NextResponse.json({ error: String(e) }, { status: 500 });
