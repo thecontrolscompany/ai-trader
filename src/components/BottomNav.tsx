@@ -12,14 +12,16 @@ const publicTabs = [
 ];
 
 const adminTabs = [
-  { href: "/scan",      label: "AI Scan",   icon: "🤖" },
-  { href: "/accounts",  label: "Portfolio", icon: "💼" },
-  { href: "/trades",    label: "Trades",    icon: "📋" },
+  { href: "/scan",        label: "AI Scan",   icon: "🤖" },
+  { href: "/accounts",    label: "Portfolio", icon: "💼" },
+  { href: "/portfolios",  label: "Compare",   icon: "📊" },
+  { href: "/trades",      label: "Trades",    icon: "📋" },
 ];
 
 const userTabs = [
-  { href: "/accounts",  label: "Portfolio", icon: "💼" },
-  { href: "/trades",    label: "Trades",    icon: "📋" },
+  { href: "/accounts",    label: "Portfolio", icon: "💼" },
+  { href: "/portfolios",  label: "Compare",   icon: "📊" },
+  { href: "/trades",      label: "Trades",    icon: "📋" },
 ];
 
 export default function BottomNav({ isLoggedIn, isAdmin = false }: Props) {

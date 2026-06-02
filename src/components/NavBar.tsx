@@ -15,6 +15,7 @@ const publicLinks = [
 // Shown to all logged-in users
 const userLinks = [
   { href: "/accounts",     label: "Portfolio" },
+  { href: "/portfolios",   label: "Compare" },
   { href: "/trades",       label: "My Trades" },
 ];
 
@@ -26,9 +27,7 @@ const adminLinks = [
 ];
 
 // Admin-only links — shown in nav
-const adminExtraLinks = [
-  { href: "/portfolios",   label: "Compare" },
-];
+const adminExtraLinks: { href: string; label: string }[] = [];
 
 // Buried — admin only, in hamburger/desktop fine print
 const researchLinks = [
