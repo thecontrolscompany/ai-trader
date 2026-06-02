@@ -30,13 +30,17 @@ export default async function PortfoliosPage() {
 
   const portfolioIds = userPortfolios.map(p => p.id);
 
-  const [allAccounts, allTrades, allSettings, allModels, allSnapshots] = await Promise.all([
+  const [allAccounts, allTrades, allSettings, allModels] = await Promise.all([
     db.select().from(accounts).where(inArray(accounts.portfolioId, portfolioIds)),
     db.select().from(trades).where(inArray(trades.portfolioId, portfolioIds)),
     db.select().from(autoTradeSettings).where(inArray(autoTradeSettings.portfolioId, portfolioIds)),
     db.select().from(aiModels),
-    db.select().from(portfolioSnapshots).where(inArray(portfolioSnapshots.portfolioId, portfolioIds)),
   ]);
+
+  // Snapshots are non-critical — failure just hides return % rows
+  const allSnapshots = await db.select().from(portfolioSnapshots)
+    .where(inArray(portfolioSnapshots.portfolioId, portfolioIds))
+    .catch(() => []);
 
   const openTrades = allTrades.filter(t => t.status === "open");
   const uniqueTickers = [...new Set(openTrades.map(t => t.ticker))];
